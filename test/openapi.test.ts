@@ -1,20 +1,40 @@
 import { expect, it } from 'vitest';
 import { createOpenApiDocument } from '@modo-playa/contracts/openapi';
-import { routes } from '@modo-playa/contracts/routes';
+import { routes, type RouteMetadata } from '@modo-playa/contracts/routes';
 
-it('genera solo las operaciones implementadas y los schemas de la metadata neutral', () => {
+it('conserva todos los métodos por path, parámetros, requests, respuestas y Bearer de la metadata', () => {
   const document = createOpenApiDocument();
   expect(document.openapi).toBe('3.1.1');
-  expect(Object.keys(document.paths)).toEqual(Object.values(routes).map((route) => route.path));
-  for (const route of Object.values(routes)) {
+  expect(Object.keys(document.paths)).toEqual([
+    ...new Set(Object.values(routes).map((route) => route.path)),
+  ]);
+  for (const route of Object.values(routes) as RouteMetadata[]) {
     const path = document.paths[route.path]!;
-    expect(Object.keys(path)).toEqual([route.method.toLowerCase()]);
     const operation = path[route.method.toLowerCase()]!;
     expect(operation.operationId).toBe(route.operation);
     expect(operation['x-lambda-group']).toBe(route.group);
-    expect(operation.responses['200']!.content['application/json']!.schema).toEqual(
-      route.responses[200].schema,
+    expect(operation.responses).toEqual(
+      Object.fromEntries(
+        Object.entries(route.responses).map(([status, response]) => [
+          status,
+          {
+            description: response.description,
+            content: { [response.mediaType]: { schema: response.schema } },
+          },
+        ]),
+      ),
     );
-    expect(operation).not.toHaveProperty('requestBody');
+    expect(operation.requestBody?.content['application/json'].schema).toEqual(route.body);
+    expect(operation.security).toEqual(route.bearer ? [{ bearerAuth: [] }] : undefined);
   }
+  expect(Object.keys(document.paths['/api/auth/me']!)).toEqual(['get', 'patch']);
+  expect(Object.keys(document.paths['/api/admin/users']!)).toEqual(['post', 'get']);
+  expect(Object.keys(document.paths['/api/admin/users/{id}']!)).toEqual(['get', 'patch']);
+  expect(document.paths['/api/admin/users/{id}']!.get!.parameters).toContainEqual({
+    name: 'id',
+    in: 'path',
+    required: true,
+    schema: { type: 'string' },
+  });
+  expect(Object.values(routes)).toHaveLength(16);
 });
