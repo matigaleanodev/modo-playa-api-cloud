@@ -3,6 +3,8 @@ node_modules/
 dist/
 coverage/
 .serverless/
+cdk.out/
+cdk.context.json
 
 # Configuración privada
 .env
@@ -19,6 +21,7 @@ context.md
 .codex/
 .tmp/
 mentor/
+status/
 
 # Archivos del editor y sistema
 .idea/

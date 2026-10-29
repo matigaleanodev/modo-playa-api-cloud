@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": { "rootDir": "src", "types": ["node", "aws-lambda"] },
+  "include": ["src/**/*.ts"]
+}

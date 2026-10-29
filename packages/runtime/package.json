@@ -1,0 +1,21 @@
+{
+  "name": "@modo-playa/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./health": "./src/health/handler.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "build": "node ../../scripts/build.mjs"
+  },
+  "dependencies": {
+    "@modo-playa/contracts": "0.1.0",
+    "@middy/core": "7.9.2",
+    "ajv": "8.20.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "8.10.164"
+  }
+}
