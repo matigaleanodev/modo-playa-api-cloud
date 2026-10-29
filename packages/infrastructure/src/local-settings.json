@@ -1,0 +1,6 @@
+{
+  "account": "000000000000",
+  "region": "us-east-1",
+  "deploymentBucket": "modo-playa-local-assets",
+  "healthRoleArn": "arn:aws:iam::000000000000:role/modo-playa-local-health"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@modo-playa/infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./stack": "./src/stack.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "synth": "node ../../scripts/synth-local.mjs"
+  },
+  "dependencies": {
+    "@modo-playa/contracts": "0.1.0",
+    "aws-cdk-lib": "2.275.0",
+    "constructs": "10.8.1"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1146.1"
+  }
+}
