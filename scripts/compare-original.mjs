@@ -5,6 +5,8 @@ import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import * as schemas from '@modo-playa/contracts/identity';
+import * as business from '@modo-playa/contracts/business';
+import { destinationPathSchema } from '@modo-playa/contracts/destinations';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 assert.ok(process.env.ORIGINAL_API_DIR, 'Indicar ORIGINAL_API_DIR explícito; nunca se carga .env.');
@@ -15,6 +17,15 @@ const { JwtService } = requireOriginal('@nestjs/jwt');
 const work = resolve(root, '.tmp/original-comparison');
 await mkdir(work, { recursive: true });
 const entries = {
+  CreateContactDto: 'contacts/dto/create-contact.dto.ts',
+  UpdateContactDto: 'contacts/dto/update-contact.dto.ts',
+  ContactsQueryDto: 'contacts/dto/contacts-query.dto.ts',
+  CreateLodgingDto: 'lodgings/dto/create-lodging.dto.ts',
+  UpdateLodgingDto: 'lodgings/dto/update-lodging.dto.ts',
+  AvailabilityRangeDto: 'lodgings/dto/availability-range.dto.ts',
+  PublicLodgingsQueryDto: 'lodgings/dto/pagination-query.dto.ts',
+  AdminLodgingsQueryDto: 'lodgings/dto/pagination-query.dto.ts',
+  GetDestinationContextParamsDto: 'destinations/dto/get-destination-context-params.dto.ts',
   JwtStrategy: 'auth/strategies/jwt.strategy.ts',
   createAppValidationPipe: 'common/pipes/app-validation.pipe.ts',
   LoginDto: 'auth/dto/login.dto.ts',
@@ -51,7 +62,7 @@ await build({
       name: 'original-dependencies',
       setup(build) {
         build.onResolve({ filter: /^[^./]/ }, (args) => {
-          if (args.path.startsWith('@common/') || args.path.startsWith('@auth/')) return;
+          if (/^@(common|auth|lodgings|destinations)\//.test(args.path)) return;
           if (args.path.startsWith('node:')) return { path: args.path, external: true };
           return { path: requireOriginal.resolve(args.path), external: true };
         });
@@ -64,7 +75,7 @@ await build({
   absWorkingDir: root,
   stdin: {
     contents:
-      "export { TokenService } from './packages/runtime/src/identity/tokens.ts'; export { validate, normalizeBody, normalizeUsersQuery } from './packages/runtime/src/identity/validation.ts';",
+      "export { validateBusiness, normalizeBusinessBody, normalizeBusinessQuery } from './packages/runtime/src/business/validation.ts'; export { TokenService } from './packages/runtime/src/identity/tokens.ts'; export { validate, normalizeBody, normalizeUsersQuery } from './packages/runtime/src/identity/validation.ts';",
     resolveDir: root,
     loader: 'ts',
   },
@@ -77,9 +88,15 @@ await build({
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
 });
-const { TokenService, validate, normalizeBody, normalizeUsersQuery } = await import(
-  pathToFileURL(resolve(work, 'cloud.mjs')).href
-);
+const {
+  TokenService,
+  validate,
+  normalizeBody,
+  normalizeUsersQuery,
+  validateBusiness,
+  normalizeBusinessBody,
+  normalizeBusinessQuery,
+} = await import(pathToFileURL(resolve(work, 'cloud.mjs')).href);
 
 const key = 'simulated-only-jwt-comparison-key';
 const jwt = new JwtService({ secret: key, signOptions: { expiresIn: '15m' } });
@@ -178,12 +195,199 @@ cases.push(
     JSON.parse('{"email":"a@example.test","username":"abc","constructor":"discarded"}'),
   ],
 );
-for (const [name, schema, operation, input] of cases) {
+const lodging = {
+  title: 'Casa',
+  description: 'Playa',
+  location: 'Centro',
+  city: 'Mar Azul',
+  type: 'house',
+  price: 0,
+  priceUnit: 'night',
+  maxGuests: 1,
+  bedrooms: 0,
+  bathrooms: 0,
+  minNights: 1,
+};
+const businessCases = [
+  [
+    'AdminLodgingsQueryDto',
+    business.adminLodgingsQuerySchema,
+    'listAdminLodgings',
+    { page: '0', includeInactive: 'bad' },
+  ],
+  [
+    'CreateContactDto',
+    business.createContactSchema,
+    'createContact',
+    { name: ' Ana ', isDefault: null, notes: null },
+  ],
+  [
+    'CreateContactDto',
+    business.createContactSchema,
+    'createContact',
+    { name: 'Ana', active: false },
+  ],
+  [
+    'CreateContactDto',
+    business.createContactSchema,
+    'createContact',
+    { name: 'Ana', targetOwnerId: 'bad' },
+  ],
+  ['UpdateContactDto', business.updateContactSchema, 'updateContact', { name: null }],
+  ['ContactsQueryDto', business.contactsQuerySchema, 'listContacts', {}],
+  [
+    'ContactsQueryDto',
+    business.contactsQuerySchema,
+    'listContacts',
+    { includeInactive: [' TRUE ', 'false'], limit: ['70', '2'] },
+  ],
+  ['ContactsQueryDto', business.contactsQuerySchema, 'listContacts', { includeInactive: 'bad' }],
+  ['CreateLodgingDto', business.createLodgingSchema, 'createLodging', lodging],
+  ['CreateLodgingDto', business.createLodgingSchema, 'createLodging', {}],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, price: -1, maxGuests: 0 },
+  ],
+  ['CreateLodgingDto', business.createLodgingSchema, 'createLodging', { ...lodging, type: 'bad' }],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, contactId: 'bad' },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, uploadSessionId: 4 },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, pendingImageIds: [1] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, images: ['invalid'] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, images: 'example.com' },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, images: 'invalid' },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, amenities: ['bad'] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, occupiedRanges: [{ from: 'bad', to: '2026-01-02' }] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, occupiedRanges: [{ from: '2026-01-01', to: '2026-01-02', extra: 1 }] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, occupiedRanges: [4] },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, occupiedRanges: 4 },
+  ],
+  [
+    'CreateLodgingDto',
+    business.createLodgingSchema,
+    'createLodging',
+    { ...lodging, occupiedRanges: [{ from: '2026-01-01' }] },
+  ],
+  ['UpdateLodgingDto', business.updateLodgingSchema, 'updateLodging', { occupiedRanges: [] }],
+  [
+    'UpdateLodgingDto',
+    business.updateLodgingSchema,
+    'updateLodging',
+    { title: null, price: null, type: null, images: null },
+  ],
+  [
+    'AvailabilityRangeDto',
+    business.availabilityRangeSchema,
+    'removeOccupiedRange',
+    { from: '2026-01-01T23:00:00-03:00', to: '2026-01-03' },
+  ],
+  [
+    'PublicLodgingsQueryDto',
+    business.publicLodgingsQuerySchema,
+    'listPublicLodgings',
+    {
+      page: '2',
+      limit: '100',
+      minPrice: '0',
+      search: ' x.* ',
+      amenities: [' wifi ', 'pool'],
+      tag: [' familia ', ' familia '],
+    },
+  ],
+  [
+    'PublicLodgingsQueryDto',
+    business.publicLodgingsQuerySchema,
+    'listPublicLodgings',
+    { amenities: 'wifi' },
+  ],
+  [
+    'PublicLodgingsQueryDto',
+    business.publicLodgingsQuerySchema,
+    'listPublicLodgings',
+    { amenities: 'bad' },
+  ],
+  [
+    'PublicLodgingsQueryDto',
+    business.publicLodgingsQuerySchema,
+    'listPublicLodgings',
+    { tag: 'family' },
+  ],
+  ['AdminLodgingsQueryDto', business.adminLodgingsQuerySchema, 'listAdminLodgings', {}],
+  [
+    'AdminLodgingsQueryDto',
+    business.adminLodgingsQuerySchema,
+    'listAdminLodgings',
+    { page: '0', includeInactive: '0' },
+  ],
+  ['GetDestinationContextParamsDto', destinationPathSchema, 'destinationContext', { id: 'PAMPAS' }],
+  ['GetDestinationContextParamsDto', destinationPathSchema, 'destinationContext', { id: 'bad' }],
+];
+for (const [name, schema, operation, input] of [...cases, ...businessCases]) {
   let expected;
   try {
     expected = {
       value: await pipe.transform(structuredClone(input), {
-        type: name === 'UsersQueryDto' ? 'query' : 'body',
+        type:
+          name === 'GetDestinationContextParamsDto'
+            ? 'param'
+            : name.endsWith('QueryDto')
+              ? 'query'
+              : 'body',
         metatype: source[name],
       }),
     };
@@ -193,12 +397,21 @@ for (const [name, schema, operation, input] of cases) {
   let actual;
   try {
     actual = {
-      value: validate(
-        schema,
-        name === 'UsersQueryDto'
-          ? normalizeUsersQuery(structuredClone(input))
-          : normalizeBody(structuredClone(input), operation),
-      ),
+      value: businessCases.some((value) => value[0] === name)
+        ? validateBusiness(
+            schema,
+            name === 'GetDestinationContextParamsDto'
+              ? { id: input.id.toLowerCase() }
+              : name.endsWith('QueryDto')
+                ? normalizeBusinessQuery(structuredClone(input), operation)
+                : normalizeBusinessBody(structuredClone(input)),
+          )
+        : validate(
+            schema,
+            name === 'UsersQueryDto'
+              ? normalizeUsersQuery(structuredClone(input))
+              : normalizeBody(structuredClone(input), operation),
+          ),
     };
   } catch (error) {
     actual = { error: { message: error.message, code: error.code } };

@@ -1,0 +1,228 @@
+import type { LodgingDocument } from './models.ts';
+import type { MediaUrlBuilder } from '../identity/media-urls.ts';
+import type {
+  LodgingResponse as LodgingResponseDto,
+  LodgingImageResponse as LodgingImageResponseDto,
+  PublicLodgingResponse as PublicLodgingResponseDto,
+  PublicLodgingImageResponse as PublicLodgingImageResponseDto,
+  ContactResponse as ContactResponseDto,
+  PublicContactResponse as PublicLodgingContactResponseDto,
+  AvailabilityRange as AvailabilityRangeDto,
+} from '@modo-playa/contracts/business';
+
+export class LodgingMapper {
+  static toResponse(
+    lodging: LodgingDocument,
+    mediaUrlBuilder?: MediaUrlBuilder,
+  ): LodgingResponseDto {
+    const { contactId, contact } = LodgingMapper.toContactResponse(lodging);
+    const mediaImages = Array.isArray(lodging.mediaImages)
+      ? lodging.mediaImages.map<LodgingImageResponseDto>((image) => ({
+          imageId: image.imageId,
+          key: image.key,
+          isDefault: image.isDefault,
+          width: image.width,
+          height: image.height,
+          bytes: image.bytes,
+          mime: image.mime,
+          createdAt: new Date(image.createdAt).toISOString(),
+          url: mediaUrlBuilder ? mediaUrlBuilder.buildPublicUrl(image.key) : image.key,
+          variants: mediaUrlBuilder ? mediaUrlBuilder.buildLodgingVariants(image.key) : undefined,
+        }))
+      : undefined;
+
+    const derivedMainImage =
+      mediaImages?.find((image) => image.isDefault)?.url ??
+      LodgingMapper.toPublicUrl(lodging.mainImage, mediaUrlBuilder);
+
+    const normalizedImages = Array.isArray(lodging.images)
+      ? lodging.images
+          .map((image) => LodgingMapper.toPublicUrl(image, mediaUrlBuilder))
+          .filter((image): image is string => Boolean(image))
+      : [];
+    const imageUrls =
+      mediaImages && mediaImages.length > 0
+        ? mediaImages.map((image) => image.url).filter((image): image is string => Boolean(image))
+        : normalizedImages;
+
+    return {
+      id: lodging._id.toString(),
+      title: lodging.title,
+      description: lodging.description,
+      location: lodging.location,
+      city: lodging.city,
+      type: lodging.type,
+      price: lodging.price,
+      priceUnit: lodging.priceUnit,
+      maxGuests: lodging.maxGuests,
+      bedrooms: lodging.bedrooms,
+      bathrooms: lodging.bathrooms,
+      minNights: lodging.minNights,
+      distanceToBeach: lodging.distanceToBeach,
+      amenities: lodging.amenities,
+      isPubliclyVisible: lodging.isPubliclyVisible,
+      mainImage: derivedMainImage ?? '',
+      images: Array.from(new Set(imageUrls)),
+      mediaImages,
+      occupiedRanges: LodgingMapper.toAvailabilityRangesResponse(lodging.occupiedRanges),
+      contactId,
+      contact,
+    };
+  }
+
+  static toPublicResponse(
+    lodging: LodgingDocument,
+    mediaUrlBuilder: MediaUrlBuilder,
+  ): PublicLodgingResponseDto {
+    const mediaImages = Array.isArray(lodging.mediaImages)
+      ? lodging.mediaImages.map<PublicLodgingImageResponseDto>((image) => ({
+          imageId: image.imageId,
+          isDefault: image.isDefault,
+          width: image.width,
+          height: image.height,
+          createdAt: new Date(image.createdAt).toISOString(),
+          url: mediaUrlBuilder.buildPublicUrl(image.key),
+          variants: mediaUrlBuilder.buildLodgingVariants(image.key),
+        }))
+      : undefined;
+
+    const derivedMainImage =
+      mediaImages?.find((image) => image.isDefault)?.url ??
+      LodgingMapper.toPublicUrl(lodging.mainImage, mediaUrlBuilder);
+
+    const imageUrls =
+      mediaImages && mediaImages.length > 0
+        ? mediaImages.map((image) => image.url)
+        : (lodging.images ?? [])
+            .map((image) => LodgingMapper.toPublicUrl(image, mediaUrlBuilder))
+            .filter((image): image is string => Boolean(image));
+
+    const contact = LodgingMapper.toPublicContactResponse(lodging);
+
+    return {
+      id: lodging._id.toString(),
+      title: lodging.title,
+      description: lodging.description,
+      location: lodging.location,
+      city: lodging.city,
+      type: lodging.type,
+      price: lodging.price,
+      priceUnit: lodging.priceUnit,
+      maxGuests: lodging.maxGuests,
+      bedrooms: lodging.bedrooms,
+      bathrooms: lodging.bathrooms,
+      minNights: lodging.minNights,
+      distanceToBeach: lodging.distanceToBeach,
+      amenities: lodging.amenities,
+      mainImage: derivedMainImage ?? '',
+      images: Array.from(new Set(imageUrls)),
+      mediaImages,
+      occupiedRanges: LodgingMapper.toAvailabilityRangesResponse(lodging.occupiedRanges),
+      contact,
+    };
+  }
+
+  private static toPublicUrl(
+    value: string | undefined,
+    mediaUrlBuilder?: MediaUrlBuilder,
+  ): string | undefined {
+    if (!value) {
+      return value;
+    }
+
+    return mediaUrlBuilder ? mediaUrlBuilder.buildPublicUrl(value) : value;
+  }
+
+  private static toContactResponse(lodging: LodgingDocument): {
+    contactId?: string;
+    contact?: ContactResponseDto;
+  } {
+    const rawContact = lodging.contactId as unknown;
+
+    if (!rawContact) {
+      return {};
+    }
+
+    if (typeof rawContact === 'string') {
+      return { contactId: rawContact };
+    }
+
+    const asObj = rawContact as {
+      toString?: () => string;
+      _id?: { toString?: () => string } | string;
+      name?: string;
+      email?: string;
+      whatsapp?: string;
+      isDefault?: boolean;
+      active?: boolean;
+      notes?: string;
+    };
+
+    const idFromNested = typeof asObj._id === 'string' ? asObj._id : asObj._id?.toString?.();
+    const id = idFromNested ?? asObj.toString?.();
+
+    if (!id) {
+      return {};
+    }
+
+    if (!asObj.name) {
+      return { contactId: id };
+    }
+
+    return {
+      contactId: id,
+      contact: {
+        id,
+        name: asObj.name,
+        email: asObj.email,
+        whatsapp: asObj.whatsapp,
+        isDefault: !!asObj.isDefault,
+        active: asObj.active ?? true,
+        notes: asObj.notes,
+      },
+    };
+  }
+
+  private static toPublicContactResponse(
+    lodging: LodgingDocument,
+  ): PublicLodgingContactResponseDto | undefined {
+    const rawContact = lodging.contactId as unknown;
+
+    if (!rawContact || typeof rawContact === 'string') {
+      return undefined;
+    }
+
+    const asObj = rawContact as {
+      name?: string;
+      email?: string;
+      whatsapp?: string;
+    };
+
+    if (!asObj.name) {
+      return undefined;
+    }
+
+    return {
+      name: asObj.name,
+      email: asObj.email,
+      whatsapp: asObj.whatsapp,
+    };
+  }
+
+  private static toAvailabilityRangesResponse(
+    ranges?: Array<{ from: Date | string; to: Date | string }>,
+  ): AvailabilityRangeDto[] | undefined {
+    if (!Array.isArray(ranges)) {
+      return undefined;
+    }
+
+    return ranges.map((range) => ({
+      from: LodgingMapper.toIsoDate(range.from),
+      to: LodgingMapper.toIsoDate(range.to),
+    }));
+  }
+
+  private static toIsoDate(value: Date | string): string {
+    return new Date(value).toISOString().slice(0, 10);
+  }
+}

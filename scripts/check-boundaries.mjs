@@ -12,6 +12,7 @@ const allowed = {
     contractName,
     '@middy/core',
     'ajv',
+    'axios',
     'bcrypt',
     'jsonwebtoken',
     'mongoose',
