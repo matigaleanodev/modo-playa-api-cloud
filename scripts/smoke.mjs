@@ -8,7 +8,7 @@ import { event, context } from '../test/helpers.ts';
 
 const directory = await mkdtemp(join(tmpdir(), 'modo-playa-artifact-'));
 try {
-  for (const group of ['health', 'identity'])
+  for (const group of ['health', 'identity', 'catalog', 'management'])
     execFileSync('python3', [
       '-c',
       'import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])',
@@ -23,6 +23,9 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { createHealthHandler } from './health.mjs';
 import { createIdentityHandler, createIdentityApplication } from './identity.mjs';
+import { createCatalogHandler, DestinationsService, WeatherService, SunService, CloudflareMediaUrlBuilderService } from './catalog.mjs';
+import { createManagementHandler, LodgingsRepository } from './management.mjs';
+import http from 'node:http'; import https from 'node:https'; import net from 'node:net';
 const require = createRequire(import.meta.url);
 const bcrypt = require('bcrypt');
 const native = Object.keys(require.cache).filter((name) => name.endsWith('.node'));
@@ -34,6 +37,7 @@ assert.ok(await bcrypt.compare('simulated-password', hash));
 assert.equal(await bcrypt.compare('wrong-password', hash), false);
 // Cualquier efecto externo durante el smoke falla inmediatamente.
 globalThis.fetch = () => { throw new Error('Network forbidden in smoke.'); };
+http.request = https.request = net.connect = net.createConnection = () => { throw new Error('Network forbidden in smoke.'); };
 
 const simulatedUser = { _id: '507f1f77bcf86cd799439013', ownerId: '507f1f77bcf86cd799439011',
   email: 'simulated@example.test', username: 'simulated', passwordHash: hash, isActive: true, isPasswordSet: true };
@@ -58,6 +62,23 @@ event.body = JSON.stringify({ identifier: 'simulated', password: 'simulated-pass
 const login = await identity(event, context);
 assert.equal(login.statusCode, 201);
 assert.equal(JSON.parse(login.body).user.username, 'simulated');
+const mediaUrls = new CloudflareMediaUrlBuilderService({publicBaseUrl:'https://media.example.test',r2Endpoint:'',r2Bucket:''});
+const provider = async (_url,request) => request.provider === 'weather' ? {current_weather:{temperature:25,windspeed:10,weathercode:3},daily:{temperature_2m_max:[28,29],temperature_2m_min:[15,16]}} : {status:'OK',results:{sunrise:'2026-01-01T09:00:00Z',sunset:'2026-01-01T23:00:00Z'}};
+const destinations = new DestinationsService(new WeatherService(provider),new SunService(provider));
+const lodging = {_id:'simulated-lodging',title:'Casa',mainImage:'legacy.webp',images:[],occupiedRanges:[]};
+const catalog = createCatalogHandler({logRequests:false,runtime:async()=>({destinations,catalog:async()=>({mediaUrls,lodgings:{findPublicPaginated:async()=>({data:[lodging],total:1,page:1,limit:10})}})})});
+event.rawPath='/api/lodgings';event.routeKey='GET /api/lodgings';event.requestContext.http.method='GET';delete event.body;
+const listing=await catalog(event,context);assert.equal(listing.statusCode,200);assert.equal(JSON.parse(listing.body).data[0].title,'Casa');
+event.rawPath='/api/destinations/gesell/context';event.routeKey='GET /api/destinations/{id}/context';
+const destination=await catalog(event,context);assert.equal(destination.statusCode,200);assert.equal(JSON.parse(destination.body).sun.sunrise,'06:00');assert.ok(JSON.parse(destination.body).pointsOfInterest.length>0);
+const management=createManagementHandler({logRequests:false,runtime:async()=>({tokens:{authenticate:()=>({ownerId:'simulated-owner',role:'OWNER'})},services:async()=>({lodgings:{removeOccupiedRange:async(id,range,owner)=>{assert.equal(id,'simulated-lodging');assert.equal(owner,'simulated-owner');assert.equal(range.from,'2026-01-01');return [];}},mediaUrls})})});
+event.rawPath='/api/admin/lodgings/simulated-lodging/occupied-ranges';event.routeKey='DELETE /api/admin/lodgings/{id}/occupied-ranges';event.requestContext.http.method='DELETE';event.body=JSON.stringify({from:'2026-01-01',to:'2026-01-02'});
+assert.deepEqual(JSON.parse((await management(event,context)).body),[]);
+const order=[]; const id={toString:()=> '507f1f77bcf86cd799439013'};
+class LodgingModel {async save(){order.push('save');return {_id:id};} static async deleteOne(){order.push('compensate');} }
+const repository=new LodgingsRepository(LodgingModel,{findOne:async()=>null},{attachDraftUploadsToLodging:async()=>{order.push('attach');throw new Error('simulated-media-failure');}});
+await assert.rejects(repository.create({pendingImageIds:['image-1'],uploadSessionId:'draft'},'507f1f77bcf86cd799439011'),/simulated-media-failure/);
+assert.deepEqual(order,['save','attach','compensate']);
 
 `,
   );
@@ -74,5 +95,5 @@ assert.equal(JSON.parse(login.body).user.username, 'simulated');
   await rm(directory, { recursive: true, force: true });
 }
 console.info(
-  'Smoke aislado del ZIP extraído: health y bcrypt con configuración simulada explícita.',
+  'Smoke aislado de ZIP extraídos: health, identidad/bcrypt, catálogo/destinos y gestión/media con doubles explícitos.',
 );
