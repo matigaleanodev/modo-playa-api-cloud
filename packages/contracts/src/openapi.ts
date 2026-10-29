@@ -34,6 +34,12 @@ function describeOperation(route: RouteMetadata) {
   return {
     operationId: route.operation,
     'x-lambda-group': route.group,
+    ...(route.mediaDependency
+      ? {
+          'x-required-media-dependency': route.mediaDependency,
+          description: 'Contrato local; requiere integración real de media antes de publicación.',
+        }
+      : {}),
     ...(route.bearer ? { security: [{ bearerAuth: [] }] } : {}),
     ...(parameters.length ? { parameters } : {}),
     ...(route.body

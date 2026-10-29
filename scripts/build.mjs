@@ -30,7 +30,7 @@ const nativeFiles = [
   'node_modules/node-gyp-build/package.json',
   'node_modules/node-gyp-build/LICENSE',
 ];
-for (const group of ['health', 'identity']) {
+for (const group of ['health', 'identity', 'catalog', 'management']) {
   const result = await build({
     absWorkingDir: root,
     entryPoints: [`packages/runtime/src/${group}/handler.ts`],
@@ -50,14 +50,21 @@ for (const group of ['health', 'identity']) {
   for (const entry of Object.values(result.metafile.outputs).flatMap((value) => value.imports))
     assert.ok(
       isBuiltin(entry.path) ||
-        (group === 'identity' &&
-          (entry.path === 'bcrypt' ||
+        (group === 'catalog' &&
+          entry.path === 'supports-color' &&
+          entry.kind === 'require-call' &&
+          result.metafile.inputs['node_modules/debug/src/node.js']?.imports.some(
+            (value) => value.path === entry.path && value.external,
+          )) ||
+        ((group === 'identity' || group === 'catalog' || group === 'management') &&
+          ((group === 'identity' && entry.path === 'bcrypt') ||
             (optionalMongo.has(entry.path) &&
               entry.kind === 'require-call' &&
               result.metafile.inputs['node_modules/mongodb/lib/deps.js']?.imports.some(
                 (value) => value.path === entry.path && value.external,
               )) ||
-            (entry.path === '@react-email/render' &&
+            (group === 'identity' &&
+              entry.path === '@react-email/render' &&
               entry.kind === 'dynamic-import' &&
               result.metafile.inputs['node_modules/resend/dist/index.mjs']?.imports.some(
                 (value) => value.path === entry.path && value.external,
@@ -71,6 +78,17 @@ for (const group of ['health', 'identity']) {
         input.startsWith(prefix),
       ),
     );
+    if (group === 'catalog' || group === 'management') {
+      assert.doesNotMatch(
+        input,
+        /node_modules\/(bcrypt|resend)\/|runtime\/src\/identity\/(application|auth.service|mail|handler|runtime)\.ts/,
+      );
+      if (group === 'catalog')
+        assert.doesNotMatch(
+          input,
+          /node_modules\/jsonwebtoken\/|runtime\/src\/identity\/tokens\.ts/,
+        );
+    }
     if (group === 'health')
       assert.doesNotMatch(
         input,
@@ -83,7 +101,7 @@ for (const group of ['health', 'identity']) {
     'Configuración sensible en bundle.',
   );
   await writeFile(new URL(`${group}.inputs.json`, output), JSON.stringify(inputs, null, 2) + '\n');
-  const files = group === 'health' ? [] : nativeFiles;
+  const files = group === 'identity' ? nativeFiles : [];
   files.forEach((file) => assert.ok(!isPrivatePath(file)));
   // Allowlist cerrada, sin copiar node_modules completo ni binarios de otras plataformas.
   execFileSync(
@@ -129,5 +147,5 @@ execFileSync(process.execPath, ['scripts/smoke.mjs'], {
   env: { PATH: process.env.PATH },
 });
 console.info(
-  'ZIP health e identity revisados por allowlist; bcrypt ELF x86_64/glibc y smoke desde extracción aprobados.',
+  'ZIP health, identity, catalog y management revisados por allowlist; bcrypt ELF x86_64/glibc y smoke desde extracción aprobados.',
 );

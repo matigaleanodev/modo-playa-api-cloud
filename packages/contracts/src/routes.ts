@@ -1,3 +1,4 @@
+import { businessRoutes } from './business-routes.ts';
 import { healthResponseSchema } from './health.ts';
 import {
   identifierSchema,
@@ -27,14 +28,15 @@ interface ResponseMetadata {
   schema: JSONSchema;
 }
 export interface RouteMetadata {
-  method: 'GET' | 'POST' | 'PATCH';
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
-  group: 'health' | 'identity';
+  group: 'health' | 'identity' | 'catalog' | 'management';
   operation: string;
   bearer?: boolean;
   body?: JSONSchema;
-  query?: typeof usersQuerySchema;
-  parameters?: typeof userPathSchema;
+  query?: JSONSchema & { readonly properties?: Readonly<Record<string, JSONSchema>> };
+  mediaDependency?: 'draft-attachment' | 'object-cleanup';
+  parameters?: JSONSchema & { readonly properties?: Readonly<Record<string, JSONSchema>> };
   responses: Record<number, ResponseMetadata>;
 }
 const response = (
@@ -63,6 +65,7 @@ function identity(
   return { group: 'identity', operation, method, path: '/api' + path, ...options, responses };
 }
 export const routes = {
+  ...businessRoutes,
   health: {
     method: 'GET',
     path: '/api/health',

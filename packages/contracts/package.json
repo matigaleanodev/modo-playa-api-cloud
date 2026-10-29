@@ -8,7 +8,10 @@
     "./http-input": "./src/http-input.ts",
     "./routes": "./src/routes.ts",
     "./openapi": "./src/openapi.ts",
-    "./identity": "./src/identity.ts"
+    "./identity": "./src/identity.ts",
+    "./business": "./src/business.ts",
+    "./dashboard": "./src/dashboard.ts",
+    "./destinations": "./src/destinations.ts"
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
