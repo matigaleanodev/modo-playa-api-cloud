@@ -36,5 +36,5 @@ it('conserva todos los métodos por path, parámetros, requests, respuestas y Be
     required: true,
     schema: { type: 'string' },
   });
-  expect(Object.values(routes)).toHaveLength(16);
+  expect(Object.values(routes)).toHaveLength(35);
 });
