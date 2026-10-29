@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { routes } from '@modo-playa/contracts/routes';
+import { routesFor } from '@modo-playa/contracts/routes';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 // Entorno aislado: no hereda perfiles, credenciales, configuración CDK ni valores secretos.
@@ -31,7 +31,7 @@ assert.deepEqual(
   resources
     .filter((resource) => resource.Type === 'AWS::ApiGatewayV2::Route')
     .map((resource) => resource.Properties.RouteKey),
-  Object.values(routes).map((route) => `${route.method} ${route.path}`),
+  routesFor('health').map((route) => `${route.method} ${route.path}`),
 );
 assert.equal(resources.filter((resource) => resource.Type === 'AWS::Lambda::Function').length, 1);
 assert.ok(resources.every((resource) => !/AWS::IAM::|AWS::SecretsManager::/.test(resource.Type)));

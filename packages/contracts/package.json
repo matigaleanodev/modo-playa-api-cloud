@@ -7,7 +7,8 @@
     "./health": "./src/health.ts",
     "./http-input": "./src/http-input.ts",
     "./routes": "./src/routes.ts",
-    "./openapi": "./src/openapi.ts"
+    "./openapi": "./src/openapi.ts",
+    "./identity": "./src/identity.ts"
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
