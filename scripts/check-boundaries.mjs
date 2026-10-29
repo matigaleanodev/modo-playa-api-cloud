@@ -8,7 +8,17 @@ const contractName = '@modo-playa/contracts';
 const allowed = {
   contracts: new Set(),
   infrastructure: new Set([contractName, 'aws-cdk-lib', 'constructs']),
-  runtime: new Set([contractName, '@middy/core', 'ajv']),
+  runtime: new Set([
+    contractName,
+    '@middy/core',
+    'ajv',
+    'bcrypt',
+    'jsonwebtoken',
+    'mongoose',
+    'resend',
+    'validator',
+    '@aws-sdk/client-secrets-manager',
+  ]),
 };
 
 function checkImport(owner, manifest, file, specifier, typeOnly) {
@@ -33,7 +43,7 @@ function checkImport(owner, manifest, file, specifier, typeOnly) {
   const typeDependency =
     owner === 'contracts' ? 'json-schema-to-ts' : owner === 'runtime' ? 'aws-lambda' : undefined;
   assert.ok(
-    (typeOnly && name === typeDependency) ||
+    (typeOnly && (name === typeDependency || (owner === 'runtime' && typePackage))) ||
       (allowed[owner].has(name) && manifest.dependencies?.[name]),
     `Dependencia fuera del límite: ${file}: ${name}`,
   );
