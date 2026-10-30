@@ -40,10 +40,11 @@ it('prepares size-bounded external roles and ceilings without granting self-admi
         ),
       ).toBe(true);
     const foundation = access.roles[1]!;
-    expect(foundation.trust.Statement[0]).toHaveProperty(
-      ['Condition', 'StringEquals', 'token.actions.githubusercontent.com:sub'],
-      'repo:matigaleanodev/modo-playa-api-cloud:environment:foundation',
-    );
+    expect(foundation.trust.Statement[0]).toHaveProperty(['Condition', 'StringEquals'], {
+      'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+      'token.actions.githubusercontent.com:sub':
+        'repo:matigaleanodev@99203645/modo-playa-api-cloud@1434510701:environment:foundation',
+    });
   }
 });
 it('keeps every effective application permission inside the external ceiling', () => {

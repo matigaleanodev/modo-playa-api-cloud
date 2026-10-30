@@ -28,7 +28,7 @@ export const githubTrust = (environment: string) =>
       Condition: {
         StringEquals: {
           'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
-          'token.actions.githubusercontent.com:sub': `repo:matigaleanodev/modo-playa-api-cloud:environment:${environment}`,
+          'token.actions.githubusercontent.com:sub': `repo:matigaleanodev@99203645/modo-playa-api-cloud@1434510701:environment:${environment}`,
         },
       },
     },
