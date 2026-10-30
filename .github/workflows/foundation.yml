@@ -90,6 +90,7 @@ jobs:
         id: review
         run: |
           npm run synth:foundation
+          python3 -c 'import json; from pathlib import Path; path = Path("cdk.foundation.out/ModoPlayaFoundation.template.json"); path.write_text(json.dumps(json.loads(path.read_text()), separators=(",", ":")) + "\n")'
           test "$(wc -c < cdk.foundation.out/ModoPlayaFoundation.template.json)" -le 51200
           echo "checksum=$(sha256sum cdk.foundation.out/ModoPlayaFoundation.template.json | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
       - name: Retain exact foundation assembly
