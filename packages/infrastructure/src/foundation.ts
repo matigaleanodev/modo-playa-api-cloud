@@ -11,7 +11,7 @@ import {
 import { CfnRole } from 'aws-cdk-lib/aws-iam';
 import { CfnBucket, CfnBucketPolicy } from 'aws-cdk-lib/aws-s3';
 import type { Construct } from 'constructs';
-import { ACCOUNT, REGION, FOUNDATION_STACK_NAME } from './config.ts';
+import { ACCOUNT, REGION, STACK_NAME, FOUNDATION_STACK_NAME } from './config.ts';
 import {
   applicationPolicies,
   BUCKET,
@@ -98,6 +98,17 @@ export class FoundationStack extends Stack {
           Action: 's3:*',
           Resource: [`arn:aws:s3:::${BUCKET}`, `arn:aws:s3:::${BUCKET}/*`],
           Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+        },
+        {
+          Effect: 'Allow',
+          Principal: { Service: 'lambda.amazonaws.com' },
+          Action: ['s3:GetObject', 's3:GetObjectVersion'],
+          Resource: [`arn:aws:s3:::${BUCKET}/${STACK_NAME}/*`],
+          Condition: {
+            ArnLike: {
+              'aws:SourceArn': `arn:aws:lambda:${REGION}:${ACCOUNT}:web-function/${STACK_NAME}-media/revision/*`,
+            },
+          },
         },
       ]),
     });
