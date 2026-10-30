@@ -3,6 +3,7 @@ import { resolve, relative, isAbsolute } from 'node:path';
 import assert from 'node:assert/strict';
 import { CachePolicy, OriginRequestPolicy } from 'aws-cdk-lib/aws-cloudfront';
 import { routes as definitions } from '@modo-playa/contracts/routes';
+import { documentationPaths } from '@modo-playa/contracts/documentation';
 
 const directory = await realpath(resolve(process.argv[2] ?? 'cdk.out'));
 const manifest = JSON.parse(await readFile(resolve(directory, 'manifest.json'), 'utf8'));
@@ -59,7 +60,23 @@ assert.equal(ofType('AWS::Lambda::WebFunctionRevision').length, 1);
 assert.equal(ofType('AWS::Lambda::WebFunctionEndpoint').length, 1);
 assert.equal(ofType('AWS::Lambda::ResourcePolicy').length, 1);
 assert.equal(ofType('AWS::ApiGatewayV2::Integration').length, 4);
-const expectedRoutes = new Set();
+const expectedRoutes = new Set(
+  documentationPaths.flatMap((path) =>
+    ['GET', 'HEAD', 'OPTIONS'].map((method) => `${method} ${path}`),
+  ),
+);
+for (const path of documentationPaths) {
+  const route = ofType('AWS::ApiGatewayV2::Route').find(
+    (route) => route.Properties.RouteKey === `GET ${path}`,
+  );
+  assert.deepEqual(
+    route?.Properties.Target,
+    ofType('AWS::ApiGatewayV2::Route').find(
+      (route) => route.Properties.RouteKey === 'GET /api/health',
+    )?.Properties.Target,
+    'Documentation must use the protected health origin.',
+  );
+}
 for (const definition of Object.values(definitions).filter((route) => route.group !== 'media')) {
   expectedRoutes.add(`${definition.method} ${definition.path}`);
   expectedRoutes.add(`OPTIONS ${definition.path}`);

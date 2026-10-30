@@ -56,6 +56,17 @@ const event = ${JSON.stringify(event())};
 assert.deepEqual(JSON.parse((await health(event, context)).body), { status: 'ok' });
 assert.equal((await deployedHealth({ ...event, headers: { 'x-modo-playa-origin': process.env.ORIGIN_VERIFY_TOKEN } }, context)).statusCode, 200);
 assert.equal((await deployedHealth(event, context)).statusCode, 403);
+for (const path of ['/docs', '/docs/', '/openapi.json']) {
+  const request = { ...event, rawPath: path, routeKey: 'GET ' + path };
+  const response = await health(request, context);
+  assert.equal(response.statusCode, 200);
+  if (path === '/openapi.json') {
+    const document = JSON.parse(response.body);
+    assert.ok(document.paths['/api/auth/login']);
+    assert.ok(document.paths['/api/auth/me/profile-image'].post.requestBody.content['multipart/form-data']);
+  } else assert.ok(response.body.includes('Swagger UI') && response.body.includes("url:'/openapi.json'"));
+  assert.equal((await deployedHealth(request, context)).statusCode, 403);
+}
 event.rawPath = '/api/admin/contacts'; event.routeKey = 'GET /api/admin/contacts';
 
 assert.equal((await identity(event, context)).statusCode, 404);

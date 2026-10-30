@@ -28,6 +28,7 @@ import type { Construct } from 'constructs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { routes, type RouteGroup } from '@modo-playa/contracts/routes';
+import { documentationPaths } from '@modo-playa/contracts/documentation';
 import { ACCOUNT, REGION, STACK_NAME, type DeploymentConfiguration } from './config.ts';
 
 export const MEDIA_PATHS = [
@@ -139,6 +140,14 @@ export class ModoPlayaStack extends Stack {
         sourceArn: `arn:aws:execute-api:${REGION}:${ACCOUNT}:${api.ref}/*/*`,
       });
     }
+    for (const [index, path] of documentationPaths.entries())
+      for (const method of ['GET', 'HEAD', 'OPTIONS'])
+        new CfnRoute(this, `Documentation${index}${method}Route`, {
+          apiId: api.ref,
+          routeKey: `${method} ${path}`,
+          target: `integrations/${integrations.health!.ref}`,
+          authorizationType: 'NONE',
+        });
     const preflights = new Set<string>();
     for (const route of Object.values(routes)) {
       if (route.group === 'media') continue;
