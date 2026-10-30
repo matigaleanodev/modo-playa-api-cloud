@@ -1,0 +1,25 @@
+{
+  "name": "@modo-playa/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./health": "./src/health.ts",
+    "./http-input": "./src/http-input.ts",
+    "./routes": "./src/routes.ts",
+    "./openapi": "./src/openapi.ts",
+    "./identity": "./src/identity.ts",
+    "./business": "./src/business.ts",
+    "./dashboard": "./src/dashboard.ts",
+    "./destinations": "./src/destinations.ts",
+    "./media": "./src/media.ts",
+    "./documentation": "./src/documentation.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --project tsconfig.json",
+    "openapi": "node ../../scripts/generate-openapi.mjs"
+  },
+  "devDependencies": {
+    "json-schema-to-ts": "3.1.1"
+  }
+}

@@ -1,0 +1,39 @@
+# Delivery and recovery
+
+[Español](DEPLOYMENT.es.md)
+
+Foundation and application are separate CDK stacks. Synth needs Node from `.nvmrc` and local ZIPs; it never reads secret values or performs lookups. The original API and Mongo/R2 data remain independent of infrastructure delivery.
+
+## Local preparation
+
+```sh
+npm run check
+npm run prepare:access
+```
+
+`check` includes isolated application/foundation synth and assembly review. `prepare:access` generates ignored `dist/delivery-access.json` for review of the external ceiling and foundation identities; it does not install policies. Use `npm run prepare:access -- API_ID DISTRIBUTION_ID OAC_ID` (or explicit `--regional-bootstrap --cloudfront-bootstrap` for initial preparation) to constrain the actual API, distribution and OAC after initial creation. Initial bootstrap permissions are temporary and require separate review. The foundation executor cannot edit its ceiling, OIDC provider or foundation identities.
+
+For a delivery assembly, supply `DEPLOYMENT_BUCKET`, exact `HEALTH_ROLE_ARN`, `IDENTITY_ROLE_ARN`, `CATALOG_ROLE_ARN`, `MANAGEMENT_ROLE_ARN`, `MEDIA_ROLE_ARN`, all secret ARN references and public settings described in [DEVELOPMENT](DEVELOPMENT.md), then run `npm run build` and `npm run synth`. `scripts/review-package.mjs` checks routing, origins, references and assets. `review_bundle.py` preserves the manifest, referenced metadata, templates, ZIPs, lockfile and reviewed revision with checksums; private files, symlinks, escapes and modified/missing bytes are rejected.
+
+## Manual workflows
+
+CI keeps the stable name `CI`; delivery requires a successful push CI run for the exact full `reviewed_sha` on `dev` in this repository. Packaging has no OIDC or AWS execution permissions.
+
+- `build-and-deploy.yml`: default `deploy=false`; AWS jobs also require repository variable `DELIVERY_ENABLED=true`, matching `DEPLOYMENT_APPROVED_SHA`, `NETWORK_REVIEWED=true` and `RECOVERY_REVIEWED=true` in environment `candidate`. Set `PREPARE_ROLE_ARN`, `CLOUDFORMATION_ROLE_ARN` and all non-sensitive synth references as repository variables. Approval and review flags belong to `candidate`. Prepare uploads the reviewed assembly and creates a change set; execute revalidates the same template, ZIP bytes and live receipt with a separate role. It does not rebuild or synthesize.
+- `foundation.yml`: default `apply=false`; AWS job additionally requires repository variable `FOUNDATION_ENABLED=true` and matching `FOUNDATION_APPROVED_SHA` in environment `foundation`. Its package job synthesizes without OIDC and passes the same template by artifact ID and checksum. The executor validates target, template and non-destructive changes before executing. Inputs carry observed API/distribution/OAC IDs and explicit temporary bootstrap flags.
+
+Job-level gates must use repository variables because environment variables are available only after a job starts ([GitHub variable scope](https://docs.github.com/en/actions/reference/workflows-and-actions/variables#configuration-variable-precedence)).
+
+Remote environments, OIDC provider, foundation identities, ceilings, secret values and variables must be installed through an explicitly authorized administration step. Workflow publication alone does not authorize any of those actions.
+
+`DISTRIBUTION_ENABLED=false` is the default. A candidate can be enabled only with `CANDIDATE_IPS`, a comma-separated list of exact viewer IPs checked by a CloudFront Function using `event.viewer.ip`. Public mode also requires explicit `PUBLIC_ACCESS_ENABLED=true`, `PUBLIC_DOMAIN_NAME` and a compatible existing us-east-1 `PUBLIC_CERTIFICATE_ARN`; no certificate request or DNS change is part of this stack. Prod secret names do not enable traffic or effects.
+
+## Recovery
+
+Read actual CloudFormation status/events before another attempt. `CREATE_COMPLETE`, `UPDATE_COMPLETE` and `UPDATE_ROLLBACK_COMPLETE` allow a reviewed update; `REVIEW_IN_PROGRESS` is accepted only with no effective resources. `ROLLBACK_COMPLETE` recreation requires explicit `recover_empty_stack` and confirmation that every resource was deleted. In-progress or failed rollback states require a specific recovery decision; never retry blindly or widen IAM after AccessDenied.
+
+Web revisions are immutable and retained. Code/config changes create a digest-named revision and move the same endpoint at weight 100. The change-set reviewer permits only the known retained revision cycle; replacements of function, endpoint, roles or distribution, unrelated removals and unproven Conditional replacements are rejected. Retained revisions remain available in Lambda after CloudFormation stops tracking them; recovery selects a known revision through a newly reviewed ingress/revision delivery. Record its ID and configuration before enabling traffic.
+
+Recover cloud revision and ingress together. Keep Mongo, hashes, drafts, keys and confirmed R2 objects; do not restore over the active database or replay uncertain writes. Disable new mutations while diagnosing persistent failures. EC2 shutdown and traffic cutover require their own authorization.
+
+`GET /docs` (also `/docs/`) serves Swagger UI and `GET /openapi.json` serves the generated contract through the protected health/JSON origin. Both live outside `/api`, with HEAD and OPTIONS routes; no separate documentation hosting resource is required. Managed validation must establish OAC/Bearer forwarding, direct-origin rejection, multipart limits, native binaries, timeout quotas and real connectivity before public access.

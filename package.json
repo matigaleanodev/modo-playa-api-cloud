@@ -1,0 +1,42 @@
+{
+  "name": "modo-playa-api-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "privacy": "node scripts/check-privacy.mjs",
+    "lint": "oxlint --deny-warnings packages test scripts vitest.config.ts",
+    "format": "prettier --ignore-path .gitignore --write .",
+    "format:check": "prettier --ignore-path .gitignore --check .",
+    "typecheck": "npm run typecheck --workspaces && tsc --noEmit",
+    "test": "vitest run",
+    "openapi": "npm run openapi --workspace=@modo-playa/contracts",
+    "build": "npm run build --workspace=@modo-playa/runtime",
+    "synth:local": "node scripts/synth-local.mjs",
+    "check": "npm run boundaries && npm run privacy && npm run lint && npm run format:check && npm run typecheck && npm test && npm run openapi && npm run build && npm run synth:local && npm run prepare:access",
+    "prepare:media-native": "node scripts/prepare-media-native.mjs",
+    "synth": "node node_modules/aws-cdk/bin/cdk synth --no-lookups --quiet --no-notices",
+    "synth:foundation": "node node_modules/aws-cdk/bin/cdk synth --app \"node packages/infrastructure/src/foundation-app.ts\" --output cdk.foundation.out --no-lookups --quiet --no-notices",
+    "prepare:access": "node scripts/prepare-access.mjs"
+  },
+  "devDependencies": {
+    "@modo-playa/contracts": "1.0.0",
+    "@modo-playa/infrastructure": "1.0.0",
+    "@modo-playa/runtime": "1.0.0",
+    "@types/aws-lambda": "8.10.164",
+    "@types/node": "24.19.2",
+    "ajv": "8.20.0",
+    "esbuild": "0.28.2",
+    "oxlint": "1.89.0",
+    "prettier": "3.9.10",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
