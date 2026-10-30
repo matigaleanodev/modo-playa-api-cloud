@@ -1,3 +1,4 @@
+import { protectEventOrigin } from '../http/origin.ts';
 import middy from '@middy/core';
 import { Ajv } from 'ajv';
 import { httpEventSchema } from '@modo-playa/contracts/http-input';
@@ -177,9 +178,12 @@ export function createIdentityHandler(dependencies: IdentityDependencies) {
       }
     });
 }
-export const handler = createIdentityHandler({
-  logRequests: true,
-  runtime: identityRuntime(process.env),
-});
+export const handler = protectEventOrigin(
+  createIdentityHandler({
+    logRequests: true,
+    runtime: identityRuntime(process.env),
+  }),
+  process.env,
+);
 
 export { createIdentityApplication } from './application.ts';

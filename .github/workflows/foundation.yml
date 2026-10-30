@@ -1,0 +1,231 @@
+name: Plan and apply candidate foundation
+on:
+  workflow_dispatch:
+    inputs:
+      reviewed_sha:
+        description: SHA completo de dev revisado
+        type: string
+        required: true
+      apply:
+        description: Aplicar fundación previamente autorizada
+        type: boolean
+        default: false
+      api_id:
+        description: API ID observado; unassigned solo durante la primera instalación
+        type: string
+        default: unassigned
+      distribution_id:
+        description: ID de distribución propio observado
+        type: string
+        default: unassigned
+      origin_access_control_id:
+        description: ID de OAC propio observado
+        type: string
+        default: unassigned
+      cloudfront_bootstrap:
+        description: Permisos iniciales de creación CloudFront, temporales y revisados
+        type: boolean
+        default: false
+      regional_bootstrap:
+        description: Permiso regional temporal para crear la primera HTTP API
+        type: boolean
+        default: false
+permissions: {}
+concurrency:
+  group: modo-playa-candidate-delivery
+  cancel-in-progress: false
+jobs:
+  package:
+    if: github.repository == 'matigaleanodev/modo-playa-api-cloud' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      artifact_id: ${{ steps.artifact.outputs.artifact-id }}
+      checksum: ${{ steps.review.outputs.checksum }}
+    env:
+      AWS_REGION: us-east-1
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      APPROVED_SHA: ${{ vars.FOUNDATION_APPROVED_SHA }}
+      API_ID: ${{ inputs.api_id }}
+      REGIONAL_BOOTSTRAP: ${{ inputs.regional_bootstrap }}
+      DISTRIBUTION_ID: ${{ inputs.distribution_id }}
+      OAC_ID: ${{ inputs.origin_access_control_id }}
+      CLOUDFRONT_BOOTSTRAP: ${{ inputs.cloudfront_bootstrap }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify reviewed revision and parameters
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$GITHUB_SHA" = "$REVIEWED_SHA"
+          [[ "$API_ID" =~ ^(unassigned|[a-z0-9]{1,20})$ ]]
+          if [[ "${{ inputs.apply }}" == true ]]; then
+            if [[ "$REGIONAL_BOOTSTRAP" == false ]]; then test "$API_ID" != unassigned; fi
+            if [[ "$CLOUDFRONT_BOOTSTRAP" == false ]]; then
+              [[ "$DISTRIBUTION_ID" =~ ^E[A-Z0-9]+$ ]]
+              [[ "$OAC_ID" =~ ^E[A-Z0-9]+$ ]]
+            fi
+          fi
+      - name: Require CI on this exact revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$GITHUB_SHA" = "$REVIEWED_SHA"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$REVIEWED_SHA&event=push&status=success&per_page=100" > ci-runs.json
+          jq -e --arg sha "$REVIEWED_SHA" '[.workflow_runs[] | select(.head_sha == $sha and .path == ".github/workflows/ci.yml" and .conclusion == "success" and .event == "push")] | length > 0' ci-runs.json
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Synthesize the reviewed foundation without AWS access
+        id: review
+        run: |
+          npm run synth:foundation
+          test "$(wc -c < cdk.foundation.out/ModoPlayaFoundation.template.json)" -le 51200
+          echo "checksum=$(sha256sum cdk.foundation.out/ModoPlayaFoundation.template.json | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Retain exact foundation assembly
+        id: artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: foundation-assembly-${{ github.sha }}
+          path: cdk.foundation.out/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+
+  apply:
+    needs: package
+    if: inputs.apply && vars.FOUNDATION_ENABLED == 'true' && github.ref == 'refs/heads/dev'
+    environment: foundation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      REVIEWED_SHA: ${{ inputs.reviewed_sha }}
+      APPROVED_SHA: ${{ vars.FOUNDATION_APPROVED_SHA }}
+      API_ID: ${{ inputs.api_id }}
+      REGIONAL_BOOTSTRAP: ${{ inputs.regional_bootstrap }}
+      DISTRIBUTION_ID: ${{ inputs.distribution_id }}
+      OAC_ID: ${{ inputs.origin_access_control_id }}
+      CLOUDFRONT_BOOTSTRAP: ${{ inputs.cloudfront_bootstrap }}
+      EXPECTED_CHECKSUM: ${{ needs.package.outputs.checksum }}
+    steps:
+      - name: Verify approval for this exact revision
+        env:
+          APPROVED_SHA: ${{ vars.FOUNDATION_APPROVED_SHA }}
+        run: |
+          set -euo pipefail
+          [[ "$REVIEWED_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$GITHUB_SHA" = "$REVIEWED_SHA"
+          test "$APPROVED_SHA" = "$REVIEWED_SHA"
+      - name: Restore the reviewed foundation assembly
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ needs.package.outputs.artifact_id }}
+          path: cdk.foundation.out
+      - name: Verify assembly before authentication
+        run: |
+          set -euo pipefail
+          test "$(sha256sum cdk.foundation.out/ModoPlayaFoundation.template.json | cut -d ' ' -f1)" = "$EXPECTED_CHECKSUM"
+      - if: inputs.apply && vars.FOUNDATION_ENABLED == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::650387442642:role/modo-playa-candidate-foundation
+          aws-region: us-east-1
+          allowed-account-ids: '650387442642'
+          role-session-name: modo-playa-foundation-${{ github.run_id }}
+      - if: inputs.apply && vars.FOUNDATION_ENABLED == 'true'
+        name: Prepare the exact foundation change set
+        id: plan
+        run: |
+          set -euo pipefail
+          identity=$(aws sts get-caller-identity --region us-east-1 --output json)
+          test "$(jq -r .Account <<< "$identity")" = 650387442642
+          [[ "$(jq -r .Arn <<< "$identity")" == arn:aws:sts::650387442642:assumed-role/modo-playa-candidate-foundation/* ]]
+          stack=modo-playa-api-cloud-candidate-foundation
+          if aws cloudformation describe-stacks --region us-east-1 --stack-name "$stack" > prior.json 2> prior-error.txt; then
+            status=$(jq -r '.Stacks[0].StackStatus' prior.json)
+            case "$status" in CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;; *) echo "Revisar estado $status"; exit 1 ;; esac
+            kind=UPDATE
+          else
+            grep -q 'ValidationError.*Stack with id modo-playa-api-cloud-candidate-foundation does not exist' prior-error.txt || { cat prior-error.txt; exit 1; }
+            kind=CREATE
+          fi
+          change_set="${stack}-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          aws cloudformation create-change-set --region us-east-1 --stack-name "$stack" --change-set-name "$change_set" --change-set-type "$kind" --template-body file://cdk.foundation.out/ModoPlayaFoundation.template.json --role-arn arn:aws:iam::650387442642:role/modo-playa-candidate-foundation-cloudformation --capabilities CAPABILITY_NAMED_IAM --parameters "ParameterKey=CandidateApiId,ParameterValue=$API_ID" "ParameterKey=DistributionId,ParameterValue=$DISTRIBUTION_ID" "ParameterKey=OriginAccessControlId,ParameterValue=$OAC_ID" "ParameterKey=AllowRegionalApiBootstrap,ParameterValue=$REGIONAL_BOOTSTRAP" "ParameterKey=AllowCloudFrontBootstrap,ParameterValue=$CLOUDFRONT_BOOTSTRAP" > targets.json
+          stack_arn=$(jq -r .StackId targets.json)
+          changeset_arn=$(jq -r .Id targets.json)
+          aws cloudformation wait change-set-create-complete --region us-east-1 --stack-name "$stack_arn" --change-set-name "$changeset_arn"
+          aws cloudformation describe-change-set --region us-east-1 --stack-name "$stack_arn" --change-set-name "$changeset_arn" > foundation-review.json
+          aws cloudformation get-template --region us-east-1 --stack-name "$stack_arn" --change-set-name "$changeset_arn" --template-stage Original > prepared-template.json
+          python3 - <<'PY'
+          import json
+          change=json.load(open('foundation-review.json'))
+          assert change['Status']=='CREATE_COMPLETE' and change['ExecutionStatus']=='AVAILABLE' and not change.get('NextToken')
+          assert not change.get('ImportExistingResources') and not change.get('ParentChangeSetId')
+          assert change['Changes']
+          assert change['StackId']==json.load(open('targets.json'))['StackId']
+          assert change['ChangeSetId']==json.load(open('targets.json'))['Id']
+          for item in change['Changes']:
+              resource=item['ResourceChange']
+              assert resource['ResourceType'] in ('AWS::IAM::Role','AWS::S3::Bucket','AWS::S3::BucketPolicy')
+              assert resource['Action']!='Remove' and resource.get('Replacement') not in ('True','Conditional')
+          template=json.load(open('prepared-template.json'))['TemplateBody']
+          if isinstance(template,str): template=json.loads(template)
+          assert template==json.load(open('cdk.foundation.out/ModoPlayaFoundation.template.json'))
+          PY
+          echo "stack=$stack_arn" >> "$GITHUB_OUTPUT"
+          echo "changeset=$changeset_arn" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "checksum=$(sha256sum foundation-review.json | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+      - if: inputs.apply && vars.FOUNDATION_ENABLED == 'true'
+        name: Retain the reviewed template and receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: foundation-plan-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            cdk.foundation.out/
+            foundation-review.json
+            targets.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+      - if: inputs.apply && vars.FOUNDATION_ENABLED == 'true'
+        name: Execute the same reviewed foundation
+        env:
+          STACK_ARN: ${{ steps.plan.outputs.stack }}
+          CHANGESET_ARN: ${{ steps.plan.outputs.changeset }}
+          KIND: ${{ steps.plan.outputs.kind }}
+          CHECKSUM: ${{ steps.plan.outputs.checksum }}
+        run: |
+          set -euo pipefail
+          identity=$(aws sts get-caller-identity --region us-east-1 --output json)
+          test "$(jq -r .Account <<< "$identity")" = 650387442642
+          [[ "$(jq -r .Arn <<< "$identity")" == arn:aws:sts::650387442642:assumed-role/modo-playa-candidate-foundation/* ]]
+          aws cloudformation describe-change-set --region us-east-1 --stack-name "$STACK_ARN" --change-set-name "$CHANGESET_ARN" > live-review.json
+          test "$(sha256sum live-review.json | cut -d ' ' -f1)" = "$CHECKSUM"
+          aws cloudformation execute-change-set --region us-east-1 --stack-name "$STACK_ARN" --change-set-name "$CHANGESET_ARN" --client-request-token "github-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          if [[ "$KIND" == CREATE ]]; then waiter=stack-create-complete; else waiter=stack-update-complete; fi
+          aws cloudformation wait "$waiter" --region us-east-1 --stack-name "$STACK_ARN"
+          aws cloudformation describe-stacks --region us-east-1 --stack-name "$STACK_ARN" --query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' > foundation-result.json
+          jq -e '.Status == "CREATE_COMPLETE" or .Status == "UPDATE_COMPLETE"' foundation-result.json
+      - if: always() && inputs.apply && vars.FOUNDATION_ENABLED == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: foundation-result-${{ github.run_id }}-${{ github.run_attempt }}
+          path: foundation-result.json
+          if-no-files-found: warn
+          retention-days: 30

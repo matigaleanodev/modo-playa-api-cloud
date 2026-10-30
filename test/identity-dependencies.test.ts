@@ -7,28 +7,39 @@ import { userSchema } from '../packages/runtime/src/identity/models.ts';
 import { CloudflareMediaUrlBuilderService } from '../packages/runtime/src/identity/media-urls.ts';
 
 describe('dependencias reales sustituibles', () => {
-  it('carga secretos por referencia una sola vez, recupera fallos y no toma una credencial de ejemplo', async () => {
+  it('carga JSON sensible + entorno público por referencias prod, recupera fallos y comparte lectura', async () => {
+    const principal =
+      'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123';
+    const email =
+      'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/email-DEF456';
     const read = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('simulated sensitive failure'))
-      .mockResolvedValue(
-        JSON.stringify({
-          MONGO_URI: 'mongodb://127.0.0.1:1/simulated',
-          SECRET_KEY: 'simulated-key',
-          RESEND_API_KEY: 'simulated-key',
-          RESEND_FROM_EMAIL: 'test@example.test',
-        }),
-      );
+      .fn(async (reference: string) =>
+        JSON.stringify(
+          reference === principal
+            ? { MONGO_URI: 'mongodb://127.0.0.1:1/simulated', SECRET_KEY: 'simulated-key' }
+            : { RESEND_API_KEY: 'simulated-mail-key' },
+        ),
+      )
+      .mockRejectedValueOnce(new Error('simulated sensitive failure'));
     const configuration = runtimeConfiguration(
-      { IDENTITY_SECRET_ARN: 'local-simulated-reference' },
+      {
+        IDENTITY_SECRET_ARN: principal,
+        EMAIL_SECRET_ARN: email,
+        RESEND_FROM_EMAIL: 'test@example.test',
+      },
       read,
     );
     expect(read).not.toHaveBeenCalled();
     await expect(configuration()).rejects.toThrow('Runtime configuration unavailable.');
     const [a, b] = await Promise.all([configuration(), configuration()]);
     expect(a).toBe(b);
-    expect(read).toHaveBeenCalledTimes(2);
-    expect(read.mock.calls[1]![0]).toBe('local-simulated-reference');
+    expect(a).toMatchObject({
+      mongoUri: 'mongodb://127.0.0.1:1/simulated',
+      secretKey: 'simulated-key',
+      resendApiKey: 'simulated-mail-key',
+      resendFromEmail: 'test@example.test',
+    });
+    expect(read.mock.calls.map(([reference]) => reference)).toEqual([principal, principal, email]);
     await expect(runtimeConfiguration({})()).rejects.toThrow('Runtime configuration unavailable.');
   });
   it('la conexión se difiere, comparte apertura y se recupera cerrando la apertura fallida', async () => {

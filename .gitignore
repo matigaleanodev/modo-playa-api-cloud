@@ -42,3 +42,8 @@ Thumbs.db
 
 # Instrucciones técnicas públicas de Codex
 !/AGENTS.md
+
+# Foundation assembly and reviewed delivery
+cdk.foundation.out/
+delivery/
+__pycache__/

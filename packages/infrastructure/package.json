@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",
-    "synth": "node ../../scripts/synth-local.mjs"
+    "synth": "cd ../.. && node node_modules/aws-cdk/bin/cdk synth --no-lookups --quiet --no-notices"
   },
   "dependencies": {
     "@modo-playa/contracts": "0.1.0",

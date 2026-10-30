@@ -21,7 +21,7 @@ try {
     `
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { createHealthHandler } from './health.mjs';
+import { createHealthHandler, handler as deployedHealth } from './health.mjs';
 import { createIdentityHandler, createIdentityApplication } from './identity.mjs';
 import { createCatalogHandler, DestinationsService, WeatherService, SunService, CloudflareMediaUrlBuilderService } from './catalog.mjs';
 import { createManagementHandler, LodgingsRepository } from './management.mjs';
@@ -54,6 +54,8 @@ const identity = createIdentityHandler({ logRequests: false, runtime });
 const context = { getRemainingTimeInMillis: () => 4000, awsRequestId: 'local-artifact' };
 const event = ${JSON.stringify(event())};
 assert.deepEqual(JSON.parse((await health(event, context)).body), { status: 'ok' });
+assert.equal((await deployedHealth({ ...event, headers: { 'x-modo-playa-origin': process.env.ORIGIN_VERIFY_TOKEN } }, context)).statusCode, 200);
+assert.equal((await deployedHealth(event, context)).statusCode, 403);
 event.rawPath = '/api/admin/contacts'; event.routeKey = 'GET /api/admin/contacts';
 
 assert.equal((await identity(event, context)).statusCode, 404);
@@ -88,7 +90,10 @@ assert.deepEqual(order,['save','attach','compensate']);
   execFileSync(process.execPath, [helper], {
     cwd: directory,
     stdio: 'inherit',
-    env: { PATH: process.env.PATH },
+    env: {
+      PATH: process.env.PATH,
+      ORIGIN_VERIFY_TOKEN: 'simulated-artifact-origin-token-at-least-32-characters',
+    },
   });
   const { createHealthHandler } = await import(pathToFileURL(join(directory, 'health.mjs')).href);
   const response = await createHealthHandler({ logRequests: false })(event(), context);

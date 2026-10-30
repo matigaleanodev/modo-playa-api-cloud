@@ -1,3 +1,4 @@
+import { protectEventOrigin } from '../http/origin.ts';
 import middy from '@middy/core';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 import type { PublicLodgingsQuery } from '@modo-playa/contracts/business';
@@ -77,10 +78,13 @@ export function createCatalogHandler(dependencies: CatalogDependencies) {
       }
     });
 }
-export const handler = createCatalogHandler({
-  logRequests: true,
-  runtime: catalogRuntime(process.env),
-});
+export const handler = protectEventOrigin(
+  createCatalogHandler({
+    logRequests: true,
+    runtime: catalogRuntime(process.env),
+  }),
+  process.env,
+);
 export { DestinationsService } from '../destinations/destinations.service.ts';
 export { WeatherService } from '../destinations/services/weather.service.ts';
 export { SunService } from '../destinations/services/sun.service.ts';

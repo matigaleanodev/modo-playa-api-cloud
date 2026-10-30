@@ -16,20 +16,15 @@ export function mediaConfiguration(env: NodeJS.ProcessEnv, read: SecretReader = 
   return () => {
     pending ??= (async () => {
       const values = { ...env };
-      if (env.MEDIA_SECRET_ARN) {
-        const secret: unknown = JSON.parse(
-          await read(env.MEDIA_SECRET_ARN, AbortSignal.timeout(2000)),
-        );
+      for (const [reference, names] of [
+        [env.MEDIA_SECRET_ARN, ['MONGO_URI', 'SECRET_KEY']],
+        [env.STORAGE_SECRET_ARN, ['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']],
+      ] as const) {
+        if (!reference) continue;
+        const secret: unknown = JSON.parse(await read(reference, AbortSignal.timeout(2000)));
         if (!secret || typeof secret !== 'object' || Array.isArray(secret))
           throw new MediaDependencyUnavailable();
-        for (const name of [
-          'MONGO_URI',
-          'SECRET_KEY',
-          'R2_ENDPOINT',
-          'R2_BUCKET',
-          'R2_ACCESS_KEY_ID',
-          'R2_SECRET_ACCESS_KEY',
-        ]) {
+        for (const name of names) {
           const value = (secret as Record<string, unknown>)[name];
           if (typeof value !== 'string' || !value.trim()) throw new MediaDependencyUnavailable();
           values[name] = value;
@@ -60,9 +55,9 @@ export function mediaConfiguration(env: NodeJS.ProcessEnv, read: SecretReader = 
         profileMaxBytes: number('USER_PROFILE_IMAGE_MAX_BYTES', 5 * 1024 * 1024),
         requestTimeoutMs: number('MEDIA_REQUEST_TIMEOUT_MS', 90000),
       };
-    })().catch((error) => {
+    })().catch(() => {
       pending = undefined;
-      throw error;
+      throw new MediaDependencyUnavailable();
     });
     return pending;
   };
