@@ -166,9 +166,11 @@ it('keeps secret domains and observed infrastructure permissions separate', () =
   for (const role of Object.values(template.findResources('AWS::IAM::Role')))
     expect(role.Properties.PermissionsBoundary).toBe(CEILING);
   const trust = githubTrust('candidate').Statement[0]!;
-  expect(trust.Condition.StringEquals['token.actions.githubusercontent.com:sub']).toBe(
-    'repo:matigaleanodev/modo-playa-api-cloud:environment:candidate',
-  );
+  expect(trust.Condition.StringEquals).toEqual({
+    'token.actions.githubusercontent.com:aud': 'sts.amazonaws.com',
+    'token.actions.githubusercontent.com:sub':
+      'repo:matigaleanodev@99203645/modo-playa-api-cloud@1434510701:environment:candidate',
+  });
 });
 it('rejects test secret naming and uncontrolled candidate access', () => {
   const env = JSON.parse(
