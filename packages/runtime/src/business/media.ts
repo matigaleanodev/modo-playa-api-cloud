@@ -1,5 +1,5 @@
 import type { LodgingDocument } from './models.ts';
-// Fase 4 debe proporcionar los efectos reales; esta interfaz no tiene implementación no-op.
+// La integración proporciona efectos reales; no admite implementaciones de éxito no-op.
 export interface LodgingMedia {
   attachDraftUploadsToLodging(
     lodgingId: string,
@@ -8,6 +8,7 @@ export interface LodgingMedia {
     pendingImageIds: string[],
   ): Promise<void>;
   deleteAllForLodging(lodging: LodgingDocument): Promise<void>;
+  compensateFailedCreate?(lodgingId: string): Promise<void>;
 }
 export class MediaDependencyUnavailable extends Error {
   constructor() {

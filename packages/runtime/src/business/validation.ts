@@ -5,6 +5,7 @@ import { DomainException, HttpException } from '../identity/errors.ts';
 const ajv = new Ajv({ strict: true, allErrors: true });
 ajv.addFormat('original-email', { type: 'string', validate: validator.isEmail });
 ajv.addFormat('original-url', { type: 'string', validate: validator.isURL });
+ajv.addFormat('original-uuid', { type: 'string', validate: validator.isUUID });
 ajv.addFormat('original-date', { type: 'string', validate: validator.isISO8601 });
 ajv.addKeyword({
   keyword: 'x-original-max-length',
@@ -117,8 +118,10 @@ function fail(schema: JSONSchema, errors: ErrorObject[], input: unknown): never 
               ? `${name} must be a number conforming to the specified constraints`
               : `${subject} must be a string`;
   }
-  if (name === 'uploadSessionId' && error.keyword !== 'additionalProperties')
+  if (name === 'uploadSessionId' && error.keyword !== 'additionalProperties') {
     code = 'INVALID_UPLOAD_SESSION_ID';
+    if (field.format === 'original-uuid') message = 'uploadSessionId must be a UUID';
+  }
   // ValidateNested rechaza valores primitivos con su mensaje propio.
   if (name === 'occupiedRanges' && error.keyword === 'type' && !Array.isArray(value))
     message =

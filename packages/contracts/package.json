@@ -11,7 +11,8 @@
     "./identity": "./src/identity.ts",
     "./business": "./src/business.ts",
     "./dashboard": "./src/dashboard.ts",
-    "./destinations": "./src/destinations.ts"
+    "./destinations": "./src/destinations.ts",
+    "./media": "./src/media.ts"
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",

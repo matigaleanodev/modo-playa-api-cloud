@@ -20,7 +20,8 @@
     "openapi": "npm run openapi --workspace=@modo-playa/contracts",
     "build": "npm run build --workspace=@modo-playa/runtime",
     "synth:local": "npm run synth --workspace=@modo-playa/infrastructure",
-    "check": "npm run boundaries && npm run privacy && npm run lint && npm run format:check && npm run typecheck && npm test && npm run openapi && npm run build && npm run synth:local"
+    "check": "npm run boundaries && npm run privacy && npm run lint && npm run format:check && npm run typecheck && npm test && npm run openapi && npm run build && npm run synth:local",
+    "prepare:media-native": "node scripts/prepare-media-native.mjs"
   },
   "devDependencies": {
     "@modo-playa/contracts": "0.1.0",

@@ -34,7 +34,7 @@ function route(
   if (options.mediaDependency || operation === 'destinationContext')
     responses[503] = response(httpErrorSchema, 'Dependencia no disponible.');
   return {
-    group,
+    group: path.startsWith('/admin/lodgings') ? 'media' : group,
     operation,
     method,
     path: '/api' + path,

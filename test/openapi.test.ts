@@ -24,7 +24,11 @@ it('conserva todos los métodos por path, parámetros, requests, respuestas y Be
         ]),
       ),
     );
-    expect(operation.requestBody?.content['application/json'].schema).toEqual(route.body);
+    if (route.multipart)
+      expect(operation.requestBody?.content['multipart/form-data'].schema).toMatchObject({
+        required: expect.arrayContaining(['file']),
+      });
+    else expect(operation.requestBody?.content['application/json'].schema).toEqual(route.body);
     expect(operation.security).toEqual(route.bearer ? [{ bearerAuth: [] }] : undefined);
   }
   expect(Object.keys(document.paths['/api/auth/me']!)).toEqual(['get', 'patch']);
@@ -36,5 +40,5 @@ it('conserva todos los métodos por path, parámetros, requests, respuestas y Be
     required: true,
     schema: { type: 'string' },
   });
-  expect(Object.values(routes)).toHaveLength(35);
+  expect(Object.values(routes)).toHaveLength(42);
 });

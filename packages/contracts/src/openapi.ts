@@ -1,3 +1,4 @@
+import type { JSONSchema } from 'json-schema-to-ts';
 import { routes, type RouteMetadata } from './routes.ts';
 
 export function createOpenApiDocument() {
@@ -31,20 +32,47 @@ function describeOperation(route: RouteMetadata) {
       schema,
     })),
   ];
+  const requestBody:
+    { required: boolean; content: Record<string, { schema: JSONSchema }> } | undefined =
+    route.multipart
+      ? {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: [
+                  'file',
+                  ...(route.body && typeof route.body === 'object' && 'required' in route.body
+                    ? (route.body.required as string[])
+                    : []),
+                ],
+                properties: {
+                  file: { type: 'string', format: 'binary' },
+                  ...(route.body && typeof route.body === 'object' && 'properties' in route.body
+                    ? (route.body.properties as object)
+                    : {}),
+                },
+              },
+            },
+          },
+        }
+      : route.body
+        ? { required: true, content: { 'application/json': { schema: route.body } } }
+        : undefined;
   return {
     operationId: route.operation,
     'x-lambda-group': route.group,
     ...(route.mediaDependency
       ? {
           'x-required-media-dependency': route.mediaDependency,
-          description: 'Contrato local; requiere integración real de media antes de publicación.',
+          description:
+            'Requiere asociación real de drafts o limpieza de objetos, según la operación.',
         }
       : {}),
     ...(route.bearer ? { security: [{ bearerAuth: [] }] } : {}),
     ...(parameters.length ? { parameters } : {}),
-    ...(route.body
-      ? { requestBody: { required: true, content: { 'application/json': { schema: route.body } } } }
-      : {}),
+    requestBody,
     responses: Object.fromEntries(
       Object.entries(route.responses).map(([status, response]) => [
         status,

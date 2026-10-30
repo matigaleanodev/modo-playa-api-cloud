@@ -1,3 +1,4 @@
+import { mediaRoutes } from './media-routes.ts';
 import { businessRoutes } from './business-routes.ts';
 import { healthResponseSchema } from './health.ts';
 import {
@@ -30,7 +31,8 @@ interface ResponseMetadata {
 export interface RouteMetadata {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   path: string;
-  group: 'health' | 'identity' | 'catalog' | 'management';
+  group: 'health' | 'identity' | 'catalog' | 'management' | 'media';
+  multipart?: 'lodging' | 'profile';
   operation: string;
   bearer?: boolean;
   body?: JSONSchema;
@@ -66,6 +68,7 @@ function identity(
 }
 export const routes = {
   ...businessRoutes,
+  ...mediaRoutes,
   health: {
     method: 'GET',
     path: '/api/health',
