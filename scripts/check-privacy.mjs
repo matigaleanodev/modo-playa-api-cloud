@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 
 export function isPrivatePath(name) {
+  if (name === 'AGENTS.md') return false;
   const parts = name.replaceAll('\\', '/').toLowerCase().split('/');
   return parts.some(
     (part) =>
@@ -24,9 +25,16 @@ export function isPrivatePath(name) {
   );
 }
 
-for (const name of ['status/current.md', 'AGENTS.md', 'src/.env', '.tmp/input.json']) {
+for (const name of [
+  'status/current.md',
+  'agents.md',
+  'src/AGENTS.md',
+  'src/.env',
+  '.tmp/input.json',
+]) {
   assert.ok(isPrivatePath(name));
 }
+assert.equal(isPrivatePath('AGENTS.md'), false);
 assert.equal(isPrivatePath('packages/runtime/src/health/handler.ts'), false);
 
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' })
@@ -48,7 +56,6 @@ for (const name of publicFiles) {
 }
 assert.ok(['README.md', 'README.es.md'].every((name) => tracked.includes(name)));
 for (const name of [
-  'AGENTS.md',
   'agents.md',
   'roadmap.md',
   'context.md',
