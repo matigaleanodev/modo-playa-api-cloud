@@ -1,6 +1,6 @@
 {
   "name": "@modo-playa/infrastructure",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,7 +11,7 @@
     "synth": "cd ../.. && node node_modules/aws-cdk/bin/cdk synth --no-lookups --quiet --no-notices"
   },
   "dependencies": {
-    "@modo-playa/contracts": "0.1.0",
+    "@modo-playa/contracts": "1.0.0",
     "aws-cdk-lib": "2.275.0",
     "constructs": "10.8.1"
   },

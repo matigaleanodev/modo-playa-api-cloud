@@ -3,6 +3,7 @@ import { App } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { rmSync, readFileSync } from 'node:fs';
 import { routes } from '@modo-playa/contracts/routes';
+import { documentationPaths } from '@modo-playa/contracts/documentation';
 import { stackFixture } from './infra-fixtures.ts';
 import { backendForPath, MEDIA_PATHS } from '../packages/infrastructure/src/stack.ts';
 import { FoundationStack } from '../packages/infrastructure/src/foundation.ts';
@@ -44,6 +45,18 @@ it('routes every metadata operation to exactly one backend with bounded media pa
     expect(declared).toContain(`OPTIONS ${route.path}`);
     if (route.method === 'GET') expect(declared).toContain(`HEAD ${route.path}`);
   }
+  const gatewayRoutes = Object.values(template.findResources('AWS::ApiGatewayV2::Route'));
+  const healthTarget = gatewayRoutes.find(
+    (route) => route.Properties.RouteKey === 'GET /api/health',
+  )!.Properties.Target;
+  for (const path of documentationPaths)
+    for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+      const route = gatewayRoutes.find(
+        (route) => route.Properties.RouteKey === `${method} ${path}`,
+      );
+      expect(route?.Properties.Target).toEqual(healthTarget);
+      expect(route?.Properties.AuthorizationType).toBe('NONE');
+    }
   expect(declared.some((route) => route.includes('ANY') || route.includes('$default'))).toBe(false);
   const dist = Object.values(template.findResources('AWS::CloudFront::Distribution'))[0]!.Properties
     .DistributionConfig;

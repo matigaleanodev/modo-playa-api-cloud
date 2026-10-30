@@ -78,3 +78,24 @@ it('configuración ausente/malformada falla saneada y recupera lectura; smoke us
   expect(result.body).toBeUndefined();
   expect(head.requestContext.http.method).toBe('HEAD');
 });
+
+it('documentación conserva protección de origen, HEAD y preflight', async () => {
+  const handler = protectEventOrigin(createHealthHandler({ logRequests: false }), {
+    ORIGIN_VERIFY_TOKEN: value,
+    CORS_ORIGIN: 'https://admin.example.test',
+  });
+  for (const path of ['/docs', '/docs/', '/openapi.json']) {
+    for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+      const request = event(path, method);
+      expect((await handler(request, context)).statusCode).toBe(403);
+      request.headers = {
+        'x-modo-playa-origin': value,
+        origin: 'https://admin.example.test',
+      };
+      const response = await handler(request, context);
+      expect(response.statusCode).toBe(method === 'OPTIONS' ? 204 : 200);
+      expect(response.headers?.['access-control-allow-origin']).toBe('https://admin.example.test');
+      if (method !== 'GET') expect(response.body).toBeUndefined();
+    }
+  }
+});
