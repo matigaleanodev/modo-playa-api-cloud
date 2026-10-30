@@ -173,7 +173,7 @@ export function applicationPolicies(
       allow(['iam:PassRole'], runtimeNames.map(roleArn), {
         StringEquals: { 'iam:PassedToService': 'lambda.amazonaws.com' },
       }),
-      readAssets,
+      allow(['s3:GetObject', 's3:GetObjectVersion'], [assetArn]),
       // Only this origin token is resolved by CloudFormation, never business credentials.
       secrets([SECRET_NAMES.ingress]),
       allow(

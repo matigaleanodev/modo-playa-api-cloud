@@ -205,7 +205,25 @@ jobs:
                 failed_stack=$(jq -r '.Stacks[0].StackId' prior-stack.json)
                 [[ "$failed_stack" =~ ^arn:aws:cloudformation:us-east-1:650387442642:stack/modo-playa-api-cloud-candidate/[A-Za-z0-9-]+$ ]]
                 aws cloudformation describe-stack-resources --region us-east-1 --stack-name "$failed_stack" > prior-resources.json
-                jq -e 'all(.StackResources[]; .ResourceStatus == "DELETE_COMPLETE")' prior-resources.json
+                python3 - <<'PY'
+            import json, re
+            resources = json.load(open('prior-resources.json'))['StackResources']
+            media_deleted = any(
+                r['LogicalResourceId'] == 'MediaWebFunction' and
+                r['ResourceType'] == 'AWS::Lambda::WebFunction' and
+                r['PhysicalResourceId'] == 'arn:aws:lambda:us-east-1:650387442642:web-function/modo-playa-api-cloud-candidate-media' and
+                r['ResourceStatus'] == 'DELETE_COMPLETE'
+                for r in resources
+            )
+            assert all(
+                r['ResourceStatus'] == 'DELETE_COMPLETE' or (
+                    r['ResourceType'] == 'AWS::Lambda::WebFunctionRevision' and
+                    re.fullmatch(r'MediaRevision[a-f0-9]{64}', r['LogicalResourceId']) and
+                    r['ResourceStatus'] == 'DELETE_SKIPPED' and
+                    r.get('PhysicalResourceId') is None and media_deleted
+                ) for r in resources
+            )
+            PY
                 identity=$(aws sts get-caller-identity --region us-east-1 --output json)
                 test "$(jq -r .Account <<< "$identity")" = 650387442642
                 test "$(jq -r .Arn <<< "$identity" | cut -d/ -f2)" = "${PIPELINE_ROLE_ARN##*/}"
