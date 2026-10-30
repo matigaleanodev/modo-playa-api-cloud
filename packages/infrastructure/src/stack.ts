@@ -140,7 +140,8 @@ export class ModoPlayaStack extends Stack {
         sourceArn: `arn:aws:execute-api:${REGION}:${ACCOUNT}:${api.ref}/*/*`,
       });
     }
-    for (const [index, path] of documentationPaths.entries())
+    for (const [index, path] of documentationPaths.entries()) {
+      if (path.endsWith('/')) continue;
       for (const method of ['GET', 'HEAD', 'OPTIONS'])
         new CfnRoute(this, `Documentation${index}${method}Route`, {
           apiId: api.ref,
@@ -148,6 +149,7 @@ export class ModoPlayaStack extends Stack {
           target: `integrations/${integrations.health!.ref}`,
           authorizationType: 'NONE',
         });
+    }
     const preflights = new Set<string>();
     for (const route of Object.values(routes)) {
       if (route.group === 'media') continue;
@@ -250,7 +252,7 @@ export class ModoPlayaStack extends Stack {
         comment: 'Candidate allowlist uses authenticated CloudFront viewer IP.',
         runtime: 'cloudfront-js-2.0',
       },
-      functionCode: `function handler(event) { var allowed = ${JSON.stringify(config.candidateIps)}; if (${String(config.publicAccess)} || allowed.indexOf(event.viewer.ip) !== -1) return event.request; return {statusCode:403,statusDescription:'Forbidden',headers:{'cache-control':{value:'no-store'}}}; }`,
+      functionCode: `function handler(event) { var allowed = ${JSON.stringify(config.candidateIps)}; if (${String(config.publicAccess)} || allowed.indexOf(event.viewer.ip) !== -1) { if (event.request.uri === '/docs/') event.request.uri = '/docs'; return event.request; } return {statusCode:403,statusDescription:'Forbidden',headers:{'cache-control':{value:'no-store'}}}; }`,
     });
     const behavior = (targetOriginId: string) => ({
       targetOriginId,
