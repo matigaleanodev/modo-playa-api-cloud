@@ -212,13 +212,16 @@ it('DELETE de disponibilidad conserva body y Bearer precede al DTO; público no 
     role: 'SUPERADMIN' as const,
     purpose: 'REFRESH' as const,
   }));
-  const management = createManagementHandler({
-    logRequests: false,
-    runtime: async () => ({
-      tokens: { authenticate: auth },
-      services: async () => ({ lodgings: { removeOccupiedRange: remove } }) as never,
-    }),
-  });
+  const management = createManagementHandler(
+    {
+      logRequests: false,
+      runtime: async () => ({
+        tokens: { authenticate: auth },
+        services: async () => ({ lodgings: { removeOccupiedRange: remove } }) as never,
+      }),
+    },
+    'media',
+  );
   const input = event('/api/admin/lodgings/{id}/occupied-ranges', 'DELETE');
   input.rawPath = '/api/admin/lodgings/507f1f77bcf86cd799439013/occupied-ranges';
   input.body = JSON.stringify({ from: '2026-01-01', to: '2026-01-02' });

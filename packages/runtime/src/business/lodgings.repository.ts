@@ -65,7 +65,10 @@ export class LodgingsRepository {
         );
       }
     } catch (error) {
-      await this.lodgingModel.deleteOne({ _id: saved._id });
+      const deletion = await this.lodgingModel.deleteOne({ _id: saved._id });
+      if (deletion?.acknowledged === false) throw error;
+      // Final objects may already be referenced. Remove them only after the document is gone.
+      await this.lodgingImagesService.compensateFailedCreate?.(saved._id.toString());
       throw error;
     }
 

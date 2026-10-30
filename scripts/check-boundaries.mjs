@@ -19,6 +19,9 @@ const allowed = {
     'resend',
     'validator',
     '@aws-sdk/client-secrets-manager',
+    '@aws-sdk/client-s3',
+    'busboy',
+    'sharp',
   ]),
 };
 

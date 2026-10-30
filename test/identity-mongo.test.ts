@@ -36,6 +36,7 @@ describe.skipIf(!process.env.LOCAL_MONGOD)(
     let business: ReturnType<typeof businessModels>;
     let managementApp: ReturnType<typeof createManagementApplication>;
     let management: ReturnType<typeof createManagementHandler>;
+    let mediaManagement: ReturnType<typeof createManagementHandler>;
     let catalog: ReturnType<typeof createCatalogHandler>;
     let access: string;
     let superadmin: string;
@@ -95,6 +96,13 @@ describe.skipIf(!process.env.LOCAL_MONGOD)(
         logRequests: false,
         runtime: async () => ({ tokens: appTokens, services: async () => managementApp }),
       });
+      mediaManagement = createManagementHandler(
+        {
+          logRequests: false,
+          runtime: async () => ({ tokens: appTokens, services: async () => managementApp }),
+        },
+        'media',
+      );
       catalog = createCatalogHandler({
         logRequests: false,
         runtime: async () => ({
@@ -376,7 +384,9 @@ describe.skipIf(!process.env.LOCAL_MONGOD)(
       input.rawQueryString = query;
       input.headers.authorization = 'Bearer ' + token;
       if (body !== undefined) input.body = JSON.stringify(body);
-      const response = await (route.group === 'catalog' ? catalog : management)(input, context);
+      const response = await (
+        route.group === 'catalog' ? catalog : route.group === 'media' ? mediaManagement : management
+      )(input, context);
       return { status: response.statusCode, body: JSON.parse(response.body as string) };
     }
     it('contactos persisten default parcial, soft delete y scope; SUPERADMIN conserva target/fallback', async () => {
