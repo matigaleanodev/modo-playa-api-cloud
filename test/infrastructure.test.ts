@@ -161,8 +161,53 @@ it('keeps secret domains and observed infrastructure permissions separate', () =
     'cloudformation:ExecuteChangeSet',
   );
   expect(policies.execute.flatMap((item) => item.Action)).not.toContain('iam:PassRole');
+  expect(
+    policies.cloudformation.filter((item) => item.Action.includes('s3:GetObjectVersion')),
+  ).toEqual([
+    {
+      Effect: 'Allow',
+      Action: ['s3:GetObject', 's3:GetObjectVersion'],
+      Resource: [
+        'arn:aws:s3:::modo-playa-candidate-assets-650387442642-us-east-1/modo-playa-api-cloud-candidate/*',
+      ],
+    },
+  ]);
+  for (const [name, statements] of Object.entries(policies))
+    if (name !== 'cloudformation')
+      expect(statements.flatMap((item) => item.Action)).not.toContain('s3:GetObjectVersion');
   const template = Template.fromStack(new FoundationStack(new App(), 'Foundation'));
   expect(Buffer.byteLength(JSON.stringify(template.toJSON()))).toBeLessThanOrEqual(51200);
+  expect(
+    Object.values(template.findResources('AWS::S3::BucketPolicy'))[0]!.Properties.PolicyDocument,
+  ).toEqual({
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Deny',
+        Principal: '*',
+        Action: 's3:*',
+        Resource: [
+          'arn:aws:s3:::modo-playa-candidate-assets-650387442642-us-east-1',
+          'arn:aws:s3:::modo-playa-candidate-assets-650387442642-us-east-1/*',
+        ],
+        Condition: { Bool: { 'aws:SecureTransport': 'false' } },
+      },
+      {
+        Effect: 'Allow',
+        Principal: { Service: 'lambda.amazonaws.com' },
+        Action: ['s3:GetObject', 's3:GetObjectVersion'],
+        Resource: [
+          'arn:aws:s3:::modo-playa-candidate-assets-650387442642-us-east-1/modo-playa-api-cloud-candidate/*',
+        ],
+        Condition: {
+          ArnLike: {
+            'aws:SourceArn':
+              'arn:aws:lambda:us-east-1:650387442642:web-function/modo-playa-api-cloud-candidate-media/revision/*',
+          },
+        },
+      },
+    ],
+  });
   for (const role of Object.values(template.findResources('AWS::IAM::Role')))
     expect(role.Properties.PermissionsBoundary).toBe(CEILING);
   const trust = githubTrust('candidate').Statement[0]!;
