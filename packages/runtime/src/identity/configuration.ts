@@ -16,18 +16,15 @@ export function runtimeConfiguration(env: NodeJS.ProcessEnv, read: SecretReader 
   return () => {
     pending ??= (async () => {
       const values = { ...env };
-      if (env.IDENTITY_SECRET_ARN) {
-        const secret: unknown = JSON.parse(
-          await read(env.IDENTITY_SECRET_ARN, AbortSignal.timeout(2000)),
-        );
+      for (const [reference, names] of [
+        [env.IDENTITY_SECRET_ARN, ['MONGO_URI', 'SECRET_KEY']],
+        [env.EMAIL_SECRET_ARN, ['RESEND_API_KEY']],
+      ] as const) {
+        if (!reference) continue;
+        const secret: unknown = JSON.parse(await read(reference, AbortSignal.timeout(2000)));
         if (!secret || typeof secret !== 'object' || Array.isArray(secret))
           throw new Error('Invalid configuration.');
-        for (const name of [
-          'MONGO_URI',
-          'SECRET_KEY',
-          'RESEND_API_KEY',
-          'RESEND_FROM_EMAIL',
-        ] as const) {
+        for (const name of names) {
           const value = (secret as Record<string, unknown>)[name];
           if (typeof value !== 'string' || !value.trim()) throw new Error('Invalid configuration.');
           values[name] = value;

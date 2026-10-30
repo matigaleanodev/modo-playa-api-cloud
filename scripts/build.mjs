@@ -151,7 +151,7 @@ for (const group of ['health', 'identity', 'catalog', 'management', 'media']) {
     if (group === 'health')
       assert.doesNotMatch(
         input,
-        /runtime\/src\/identity\/|node_modules\/(bcrypt|mongoose|mongodb|jsonwebtoken|resend|@aws-sdk)\//,
+        /runtime\/src\/identity\/|node_modules\/(bcrypt|mongoose|mongodb|jsonwebtoken|resend)\//,
       );
   }
   const bundle = await readFile(new URL(`${group}.mjs`, output), 'utf8');

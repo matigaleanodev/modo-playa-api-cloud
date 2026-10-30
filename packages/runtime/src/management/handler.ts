@@ -1,3 +1,4 @@
+import { protectEventOrigin } from '../http/origin.ts';
 import { executeManagementOperation } from './operations.ts';
 import middy from '@middy/core';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
@@ -89,10 +90,13 @@ export function createManagementHandler(
       }
     });
 }
-export const handler = createManagementHandler({
-  logRequests: true,
-  runtime: managementRuntime(process.env),
-});
+export const handler = protectEventOrigin(
+  createManagementHandler({
+    logRequests: true,
+    runtime: managementRuntime(process.env),
+  }),
+  process.env,
+);
 export { createManagementApplication } from './application.ts';
 export { ContactsRepository } from '../business/contacts.repository.ts';
 export { LodgingsRepository } from '../business/lodgings.repository.ts';

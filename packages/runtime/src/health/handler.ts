@@ -1,3 +1,4 @@
+import { protectEventOrigin } from '../http/origin.ts';
 import middy from '@middy/core';
 import { Ajv } from 'ajv';
 import { httpEventSchema, type HttpEvent } from '@modo-playa/contracts/http-input';
@@ -53,4 +54,4 @@ export function createHealthHandler(configuration: RuntimeConfiguration) {
     });
 }
 
-export const handler = createHealthHandler({ logRequests: true });
+export const handler = protectEventOrigin(createHealthHandler({ logRequests: true }), process.env);

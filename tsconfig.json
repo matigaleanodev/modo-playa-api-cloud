@@ -8,7 +8,8 @@
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "types": ["node", "aws-lambda"]
+    "types": ["node", "aws-lambda"],
+    "allowJs": true
   },
   "include": ["packages/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
 }
