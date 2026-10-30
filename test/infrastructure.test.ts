@@ -2,6 +2,7 @@ import { afterEach, expect, it } from 'vitest';
 import { App } from 'aws-cdk-lib';
 import { Template } from 'aws-cdk-lib/assertions';
 import { rmSync, readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { routes } from '@modo-playa/contracts/routes';
 import { documentationPaths } from '@modo-playa/contracts/documentation';
 import { stackFixture } from './infra-fixtures.ts';
@@ -49,7 +50,8 @@ it('routes every metadata operation to exactly one backend with bounded media pa
   const healthTarget = gatewayRoutes.find(
     (route) => route.Properties.RouteKey === 'GET /api/health',
   )!.Properties.Target;
-  for (const path of documentationPaths)
+  expect(declared.every((route) => !route.endsWith('/'))).toBe(true);
+  for (const path of documentationPaths.filter((path) => !path.endsWith('/')))
     for (const method of ['GET', 'HEAD', 'OPTIONS']) {
       const route = gatewayRoutes.find(
         (route) => route.Properties.RouteKey === `${method} ${path}`,
@@ -82,6 +84,42 @@ it('routes every metadata operation to exactly one backend with bounded media pa
     ),
   ).toBe(true);
   template.hasResourceProperties('AWS::ApiGatewayV2::Api', { DisableExecuteApiEndpoint: false });
+});
+it('normalizes only the docs slash at the edge while preserving viewer access and requests', () => {
+  for (const publicAccess of [false, true]) {
+    const { stack } = fixture({
+      DISTRIBUTION_ENABLED: 'true',
+      CANDIDATE_IPS: '198.51.100.2',
+      PUBLIC_ACCESS_ENABLED: String(publicAccess),
+      PUBLIC_DOMAIN_NAME: 'api.example.test',
+      PUBLIC_CERTIFICATE_ARN: 'arn:aws:acm:us-east-1:650387442642:certificate/1234-abcd',
+    });
+    const code = Object.values(
+      Template.fromStack(stack).findResources('AWS::CloudFront::Function'),
+    )[0]!.Properties.FunctionCode;
+    for (const method of ['GET', 'HEAD', 'OPTIONS'])
+      for (const uri of ['/docs/', '/docs', '/docs/extra', '/api/auth/me/', '/openapi.json']) {
+        const request = {
+          method,
+          uri,
+          querystring: { filter: { value: 'value' } },
+          headers: {
+            authorization: { value: 'Bearer existing-session' },
+            'content-type': { value: 'multipart/form-data; boundary=fixture' },
+          },
+          body: { data: 'fixture', encoding: 'text' },
+        };
+        const expected = { ...structuredClone(request), uri: uri === '/docs/' ? '/docs' : uri };
+        const event = { viewer: { ip: publicAccess ? '203.0.113.1' : '198.51.100.2' }, request };
+        expect(runInNewContext(`${code}; handler(event);`, { event })).toBe(request);
+        expect(request).toEqual(expected);
+      }
+    if (!publicAccess) {
+      const event = { viewer: { ip: '203.0.113.1' }, request: { uri: '/docs/' } };
+      expect(runInNewContext(`${code}; handler(event);`, { event }).statusCode).toBe(403);
+      expect(event.request.uri).toBe('/docs/');
+    }
+  }
 });
 it('protects Web origin with one OAC policy while preserving Bearer and media budgets', () => {
   const { stack } = fixture();

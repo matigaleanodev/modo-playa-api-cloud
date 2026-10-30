@@ -60,12 +60,13 @@ assert.equal(ofType('AWS::Lambda::WebFunctionRevision').length, 1);
 assert.equal(ofType('AWS::Lambda::WebFunctionEndpoint').length, 1);
 assert.equal(ofType('AWS::Lambda::ResourcePolicy').length, 1);
 assert.equal(ofType('AWS::ApiGatewayV2::Integration').length, 4);
+const gatewayDocumentationPaths = documentationPaths.filter((path) => !path.endsWith('/'));
 const expectedRoutes = new Set(
-  documentationPaths.flatMap((path) =>
+  gatewayDocumentationPaths.flatMap((path) =>
     ['GET', 'HEAD', 'OPTIONS'].map((method) => `${method} ${path}`),
   ),
 );
-for (const path of documentationPaths) {
+for (const path of gatewayDocumentationPaths) {
   const route = ofType('AWS::ApiGatewayV2::Route').find(
     (route) => route.Properties.RouteKey === `GET ${path}`,
   );
@@ -108,7 +109,7 @@ assert.deepEqual(
 );
 for (const route of routes) {
   assert.equal(route.Properties.AuthorizationType, 'NONE');
-  assert.doesNotMatch(route.Properties.RouteKey, /ANY|\$default|proxy\+/);
+  assert.doesNotMatch(route.Properties.RouteKey, /ANY|\$default|proxy\+|\/$/);
 }
 for (const fn of ofType('AWS::Lambda::Function')) {
   const name = events.find(
