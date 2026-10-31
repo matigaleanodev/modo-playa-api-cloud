@@ -1,6 +1,6 @@
 {
   "name": "@modo-playa/contracts",
-  "version": "1.0.0",
+  "version": "1.1.1",
   "private": true,
   "type": "module",
   "exports": {
@@ -13,7 +13,8 @@
     "./dashboard": "./src/dashboard.ts",
     "./destinations": "./src/destinations.ts",
     "./media": "./src/media.ts",
-    "./documentation": "./src/documentation.ts"
+    "./documentation": "./src/documentation.ts",
+    "./configuration": "./src/configuration.ts"
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",

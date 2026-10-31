@@ -4,7 +4,12 @@ import type {
   APIGatewayProxyStructuredResultV2,
   Context,
 } from 'aws-lambda';
-import { readSecret, type SecretReader } from './secret-reader.ts';
+import {
+  applyParameter,
+  readParameter,
+  refreshing,
+  type ParameterReader,
+} from './parameter-reader.ts';
 
 type EventHandler = (
   event: APIGatewayProxyEventV2,
@@ -15,29 +20,19 @@ type EventHandler = (
 export function protectEventOrigin(
   handler: EventHandler,
   env: NodeJS.ProcessEnv,
-  read: SecretReader = readSecret,
+  read: ParameterReader = readParameter,
 ): EventHandler {
-  let pending: Promise<Buffer> | undefined;
-  const token = () => {
-    pending ??= (async () => {
-      let value: unknown = env.ORIGIN_VERIFY_TOKEN;
-      if (env.ORIGIN_SECRET_ARN) {
-        const secret: unknown = JSON.parse(
-          await read(env.ORIGIN_SECRET_ARN, AbortSignal.timeout(2000)),
-        );
-        if (!secret || typeof secret !== 'object' || Array.isArray(secret))
-          throw new Error('Origin configuration unavailable.');
-        value = (secret as Record<string, unknown>).ORIGIN_VERIFY_TOKEN;
-      }
+  const token = refreshing(
+    async () => {
+      const values = { ...env };
+      await applyParameter(values, 'ingress', read);
+      const value = values.ORIGIN_VERIFY_TOKEN;
       if (typeof value !== 'string' || value.length < 32)
         throw new Error('Origin configuration unavailable.');
       return createHash('sha256').update(value).digest();
-    })().catch(() => {
-      pending = undefined;
-      throw new Error('Origin configuration unavailable.');
-    });
-    return pending;
-  };
+    },
+    () => new Error('Origin configuration unavailable.'),
+  );
   return async (event, context) => {
     let expected: Buffer;
     try {

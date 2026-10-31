@@ -3,14 +3,13 @@ import { protectEventOrigin } from '../packages/runtime/src/http/origin.ts';
 import { createHealthHandler } from '../packages/runtime/src/health/handler.ts';
 import { event, context } from './helpers.ts';
 
-const reference =
-  'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/ingress-ABC123';
+const reference = '/modo-playa/prod/ingress';
 const value = 'simulated-origin-token-with-at-least-32-characters';
 
 it('origen JSON rechaza acceso directo/headers falsos antes del handler, incl HEAD y OPTIONS', async () => {
   const run = vi.fn(async () => ({ statusCode: 200 }));
   const read = vi.fn(async (_reference: string) => JSON.stringify({ ORIGIN_VERIFY_TOKEN: value }));
-  const handler = protectEventOrigin(run, { ORIGIN_SECRET_ARN: reference }, read);
+  const handler = protectEventOrigin(run, { ORIGIN_PARAMETER_NAME: reference }, read);
   expect(read).not.toHaveBeenCalled();
   for (const method of ['GET', 'POST', 'DELETE', 'HEAD', 'OPTIONS']) {
     const input = event('/api/health', method);
@@ -39,7 +38,7 @@ it('configuración ausente/malformada falla saneada y recupera lectura; smoke us
     .fn()
     .mockRejectedValueOnce(new Error('sensitive-origin-value'))
     .mockResolvedValue(JSON.stringify({ ORIGIN_VERIFY_TOKEN: value }));
-  const handler = protectEventOrigin(run, { ORIGIN_SECRET_ARN: reference }, read);
+  const handler = protectEventOrigin(run, { ORIGIN_PARAMETER_NAME: reference }, read);
   const failed = await handler(event(), context);
   expect(failed.statusCode).toBe(503);
   expect(failed.body).not.toContain('sensitive');

@@ -26,13 +26,7 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   AWS_EC2_METADATA_DISABLED: 'true'
-  IDENTITY_SECRET_ARN: ${{ vars.IDENTITY_SECRET_ARN }}
-  MANAGEMENT_SECRET_ARN: ${{ vars.MANAGEMENT_SECRET_ARN }}
-  MEDIA_SECRET_ARN: ${{ vars.MEDIA_SECRET_ARN }}
-  CATALOG_SECRET_ARN: ${{ vars.CATALOG_SECRET_ARN }}
-  EMAIL_SECRET_ARN: ${{ vars.EMAIL_SECRET_ARN }}
-  STORAGE_SECRET_ARN: ${{ vars.STORAGE_SECRET_ARN }}
-  ORIGIN_SECRET_ARN: ${{ vars.ORIGIN_SECRET_ARN }}
+  CONFIGURATION_GENERATION: ${{ vars.CONFIGURATION_GENERATION }}
   HEALTH_ROLE_ARN: ${{ vars.HEALTH_ROLE_ARN }}
   IDENTITY_ROLE_ARN: ${{ vars.IDENTITY_ROLE_ARN }}
   CATALOG_ROLE_ARN: ${{ vars.CATALOG_ROLE_ARN }}
@@ -239,7 +233,11 @@ jobs:
           test "$(jq -r .Account <<< "$identity")" = 650387442642
           test "$(jq -r .Arn <<< "$identity" | cut -d/ -f2)" = "${PIPELINE_ROLE_ARN##*/}"
           change_set="modo-playa-api-cloud-candidate-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          npm exec --workspace=@modo-playa/infrastructure -- cdk deploy --app ../../delivery/cdk.out ModoPlayaCandidate --role-arn "$CLOUDFORMATION_ROLE_ARN" --method prepare-change-set --change-set-name "$change_set" --require-approval never --no-notices
+          # Token de origen para el parámetro NoEcho de CloudFront; enmascarado y nunca escrito a disco.
+          origin_token=$(aws ssm get-parameter --region us-east-1 --name /modo-playa/prod/ingress --with-decryption --query Parameter.Value --output text | python3 -I -c 'import json, sys; value = json.load(sys.stdin)["ORIGIN_VERIFY_TOKEN"]; assert isinstance(value, str) and len(value) >= 32; print(value)')
+          echo "::add-mask::$origin_token"
+          npm exec --workspace=@modo-playa/infrastructure -- cdk deploy --app ../../delivery/cdk.out ModoPlayaCandidate --role-arn "$CLOUDFORMATION_ROLE_ARN" --method prepare-change-set --change-set-name "$change_set" --parameters "ModoPlayaCandidate:OriginVerifyToken=$origin_token" --require-approval never --no-notices
+          unset origin_token
           aws cloudformation describe-change-set --region us-east-1 --stack-name modo-playa-api-cloud-candidate --change-set-name "$change_set" > targets.json
           stack=$(jq -r .StackId targets.json)
           changeset=$(jq -r .ChangeSetId targets.json)
