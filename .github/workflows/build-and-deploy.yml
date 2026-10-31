@@ -236,7 +236,7 @@ jobs:
           # Token de origen para el parámetro NoEcho de CloudFront; enmascarado y nunca escrito a disco.
           origin_token=$(aws ssm get-parameter --region us-east-1 --name /modo-playa/prod/ingress --with-decryption --query Parameter.Value --output text | python3 -I -c 'import json, sys; value = json.load(sys.stdin)["ORIGIN_VERIFY_TOKEN"]; assert isinstance(value, str) and len(value) >= 32; print(value)')
           echo "::add-mask::$origin_token"
-          npm exec --workspace=@modo-playa/infrastructure -- cdk deploy --app ../../delivery/cdk.out ModoPlayaCandidate --role-arn "$CLOUDFORMATION_ROLE_ARN" --method prepare-change-set --change-set-name "$change_set" --parameters "ModoPlayaCandidate:OriginVerifyToken=$origin_token" --require-approval never --no-notices
+          npm exec --workspace=@modo-playa/infrastructure -- cdk deploy --app ../../delivery/cdk.out ModoPlayaCandidate --role-arn "$CLOUDFORMATION_ROLE_ARN" --method prepare-change-set --change-set-name "$change_set" --parameters "OriginVerifyToken=$origin_token" --require-approval never --no-notices
           unset origin_token
           aws cloudformation describe-change-set --region us-east-1 --stack-name modo-playa-api-cloud-candidate --change-set-name "$change_set" > targets.json
           stack=$(jq -r .StackId targets.json)
