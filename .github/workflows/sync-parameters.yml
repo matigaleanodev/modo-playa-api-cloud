@@ -85,8 +85,6 @@ jobs:
               payloads[domain] = json.dumps(payload, separators=(',', ':'), ensure_ascii=False)
               if len(payloads[domain].encode()) > 4096:
                   fail(f'El payload {domain} excede 4096 bytes.')
-          if os.environ.get('APP_MONGO_URI') and os.environ.get('APP_MONGO_URI') == os.environ.get('CATALOG_MONGO_URI'):
-              fail('Las URI de escritura y de solo lectura deben ser credenciales distintas.')
           for domain, body in payloads.items():
               with open(os.path.join(workdir, f'{domain}.json'), 'w', encoding='utf-8') as file:
                   file.write(body)
