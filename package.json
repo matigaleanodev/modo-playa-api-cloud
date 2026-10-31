@@ -1,6 +1,6 @@
 {
   "name": "modo-playa-api-cloud",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "type": "module",
   "engines": {
@@ -27,9 +27,9 @@
     "prepare:access": "node scripts/prepare-access.mjs"
   },
   "devDependencies": {
-    "@modo-playa/contracts": "1.1.1",
-    "@modo-playa/infrastructure": "1.1.1",
-    "@modo-playa/runtime": "1.1.1",
+    "@modo-playa/contracts": "1.1.2",
+    "@modo-playa/infrastructure": "1.1.2",
+    "@modo-playa/runtime": "1.1.2",
     "@types/aws-lambda": "8.10.164",
     "@types/node": "24.19.2",
     "ajv": "8.20.0",

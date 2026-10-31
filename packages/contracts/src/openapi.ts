@@ -9,7 +9,7 @@ export function createOpenApiDocument() {
   return {
     openapi: '3.1.1',
     jsonSchemaDialect: 'http://json-schema.org/draft-07/schema#',
-    info: { title: 'Modo Playa API', version: '1.1.1' },
+    info: { title: 'Modo Playa API', version: '1.1.2' },
     paths,
     components: {
       securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
