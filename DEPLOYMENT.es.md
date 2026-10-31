@@ -30,7 +30,7 @@ Environments remotos, proveedor OIDC, identidades de fundación, ceilings, valor
 
 ## Parámetros de runtime
 
-Los GitHub Actions Secrets del environment `parameters` son la única fuente: `APP_MONGO_URI` (escritura), `JWT_SECRET_KEY`, `CATALOG_MONGO_URI` (solo lectura, distinta de la de escritura), `RESEND_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y `ORIGIN_VERIFY_TOKEN` (mínimo 32 caracteres). Los parámetros no se editan en la consola.
+Los GitHub Actions Secrets del environment `parameters` son la única fuente: `APP_MONGO_URI` (escritura), `JWT_SECRET_KEY`, `CATALOG_MONGO_URI` (pensada para solo lectura; hoy puede coincidir con la de escritura), `RESEND_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y `ORIGIN_VERIFY_TOKEN` (mínimo 32 caracteres). Los parámetros no se editan en la consola.
 
 [sync-parameters.yml](.github/workflows/sync-parameters.yml) corre solo por `workflow_dispatch` desde `dev`, con `PARAMETERS_SYNC_ENABLED=true` como variable de repositorio. El input `domain` elige `app-properties`, `database`, `email`, `object-storage`, `ingress` o `all`; los demás parámetros no se tocan. Valida y arma todos los JSON antes de autenticarse, verifica cuenta, región, rama y rol, y publica con `--overwrite` sin leer valores. El resumen muestra solo nombres y versiones. El rol `modo-playa-candidate-parameters` es una identidad externa generada por `prepare:access` con boundary propio: solo `ssm:PutParameter` sobre los cinco parámetros y `kms:Encrypt`/`GenerateDataKey` vía SSM con su contexto.
 
