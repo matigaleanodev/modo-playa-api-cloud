@@ -27,8 +27,25 @@ def targets(stack, changeset):
 
 
 def stable_environment(current, previous):
-    # Una propagación Conditional sólo es inocua si Environment sigue idéntico.
-    return current.get('Properties', {}).get('Environment', {}) == previous.get('Properties', {}).get('Environment', {})
+    # Una propagación Conditional sólo es inocua si Environment sigue idéntico, salvo referencias de
+    # configuración: retirar *_SECRET_ARN, nombres de parámetros del proyecto y la generación de reciclado.
+    now = current.get('Properties', {}).get('Environment', {})
+    before = previous.get('Properties', {}).get('Environment', {})
+    if {k: v for k, v in now.items() if k != 'Variables'} != {k: v for k, v in before.items() if k != 'Variables'}:
+        return False
+    variables, old = now.get('Variables', {}), before.get('Variables', {})
+    for key in set(variables) | set(old):
+        value = variables.get(key)
+        if value == old.get(key):
+            continue
+        if key.endswith('_SECRET_ARN') and key not in variables:
+            continue
+        if key.endswith('_PARAMETER_NAME') and isinstance(value, str) and re.fullmatch(r'/modo-playa/prod/[a-z-]+', value):
+            continue
+        if key == 'CONFIGURATION_GENERATION' and isinstance(value, str) and re.fullmatch(r'[1-9]\d{0,9}', value):
+            continue
+        return False
+    return True
 
 
 def stable_permission(resource, changes, template, prior):
