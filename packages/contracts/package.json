@@ -13,7 +13,8 @@
     "./dashboard": "./src/dashboard.ts",
     "./destinations": "./src/destinations.ts",
     "./media": "./src/media.ts",
-    "./documentation": "./src/documentation.ts"
+    "./documentation": "./src/documentation.ts",
+    "./configuration": "./src/configuration.ts"
   },
   "scripts": {
     "typecheck": "tsc --project tsconfig.json",

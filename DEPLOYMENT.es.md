@@ -11,9 +11,9 @@ npm run check
 npm run prepare:access
 ```
 
-`check` incluye synth aislado de aplicación/fundación y revisión de assembly. `prepare:access` genera `dist/delivery-access.json` ignorado para revisar el ceiling externo y las identidades de fundación; no instala policies. Usar `npm run prepare:access -- API_ID DISTRIBUTION_ID OAC_ID` (o `--regional-bootstrap --cloudfront-bootstrap` explícitos para preparación inicial) para acotar API, distribución y OAC después de crearlos. Los permisos iniciales de bootstrap son temporales y requieren revisión específica. El executor de fundación no puede editar su ceiling, proveedor OIDC ni identidades de fundación.
+`check` incluye synth aislado de aplicación/fundación y revisión de assembly. `prepare:access` genera `dist/delivery-access.json` ignorado para revisar el ceiling externo, las identidades de fundación y la de sincronización de parámetros; no instala policies. Usar `npm run prepare:access -- API_ID DISTRIBUTION_ID OAC_ID` (o `--regional-bootstrap --cloudfront-bootstrap` explícitos para preparación inicial) para acotar API, distribución y OAC después de crearlos. Los permisos iniciales de bootstrap son temporales y requieren revisión específica. El executor de fundación no puede editar su ceiling, proveedor OIDC ni identidades de fundación.
 
-Para preparar una assembly, definir `DEPLOYMENT_BUCKET`, los roles exactos `HEALTH_ROLE_ARN`, `IDENTITY_ROLE_ARN`, `CATALOG_ROLE_ARN`, `MANAGEMENT_ROLE_ARN`, `MEDIA_ROLE_ARN`, todas las referencias ARN de secretos y la configuración pública de [DEVELOPMENT](DEVELOPMENT.es.md); ejecutar `npm run build` y `npm run synth`. `scripts/review-package.mjs` revisa rutas, orígenes, referencias y assets. `review_bundle.py` conserva manifest, metadata referenciada, templates, ZIP, lockfile y revisión con checksums; rechaza privados, symlinks, escapes y bytes alterados/faltantes.
+Para preparar una assembly, definir `DEPLOYMENT_BUCKET`, los roles exactos `HEALTH_ROLE_ARN`, `IDENTITY_ROLE_ARN`, `CATALOG_ROLE_ARN`, `MANAGEMENT_ROLE_ARN`, `MEDIA_ROLE_ARN` y la configuración pública de [DEVELOPMENT](DEVELOPMENT.es.md); ejecutar `npm run build` y `npm run synth`. `scripts/review-package.mjs` revisa rutas, orígenes, referencias y assets. `review_bundle.py` conserva manifest, metadata referenciada, templates, ZIP, lockfile y revisión con checksums; rechaza privados, symlinks, escapes y bytes alterados/faltantes.
 
 ## Workflows manuales
 
@@ -27,6 +27,16 @@ Los gates de jobs deben ser variables de repositorio: las variables de environme
 Environments remotos, proveedor OIDC, identidades de fundación, ceilings, valores secretos y variables se instalan únicamente mediante administración explícitamente autorizada. Publicar workflows no autoriza esas acciones.
 
 `DISTRIBUTION_ENABLED=false` por defecto. Habilitar candidata exige `CANDIDATE_IPS`, lista de IPs exactas separadas por coma que una CloudFront Function verifica mediante `event.viewer.ip`. Modo público exige además `PUBLIC_ACCESS_ENABLED=true`, `PUBLIC_DOMAIN_NAME` y `PUBLIC_CERTIFICATE_ARN` existente compatible en us-east-1; este stack no solicita certificados ni cambia DNS. Los nombres prod de secretos no habilitan tráfico ni efectos.
+
+## Parámetros de runtime
+
+Los GitHub Actions Secrets del environment `parameters` son la única fuente: `APP_MONGO_URI` (escritura), `JWT_SECRET_KEY`, `CATALOG_MONGO_URI` (solo lectura, distinta de la de escritura), `RESEND_API_KEY`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` y `ORIGIN_VERIFY_TOKEN` (mínimo 32 caracteres). Los parámetros no se editan en la consola.
+
+[sync-parameters.yml](.github/workflows/sync-parameters.yml) corre solo por `workflow_dispatch` desde `dev`, con `PARAMETERS_SYNC_ENABLED=true` como variable de repositorio. El input `domain` elige `app-properties`, `database`, `email`, `object-storage`, `ingress` o `all`; los demás parámetros no se tocan. Valida y arma todos los JSON antes de autenticarse, verifica cuenta, región, rama y rol, y publica con `--overwrite` sin leer valores. El resumen muestra solo nombres y versiones. El rol `modo-playa-candidate-parameters` es una identidad externa generada por `prepare:access` con boundary propio: solo `ssm:PutParameter` sobre los cinco parámetros y `kms:Encrypt`/`GenerateDataKey` vía SSM con su contexto.
+
+Para cargar o rotar un valor desde VS Code: en la extensión GitHub Actions abrir **Settings → Environments → parameters → Secrets** y crear o reemplazar el secret, o desde la terminal integrada `gh secret set NOMBRE --env parameters` (lee el valor por entrada estándar). Luego ejecutar **Sync runtime parameters** en `dev` desde la vista Workflows o con `gh workflow run sync-parameters.yml --ref dev -f domain=email`, aprobar el environment y revisar las versiones en el resumen. Si cambió `MONGO_URI`, incrementar `CONFIGURATION_GENERATION` y entregar una revisión antes de revocar la credencial anterior. Si cambió el ingreso, el runtime lo toma en hasta 5 minutos y CloudFront en la siguiente entrega: hay un intervalo de 403 entre ambos, así que conviene sincronizar y entregar seguidos.
+
+Al preparar el changeset, `build-and-deploy.yml` lee `/modo-playa/prod/ingress` con el rol de preparación, enmascara el token y lo pasa como `OriginVerifyToken`; el revisor solo acepta ese parámetro y con su valor oculto.
 
 ## Recuperación
 
