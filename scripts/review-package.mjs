@@ -118,7 +118,10 @@ for (const fn of ofType('AWS::Lambda::Function')) {
   assert.ok(name);
   assert.equal(fn.Properties.Handler, `${name}.handler`);
   assert.equal(fn.Properties.Runtime, 'nodejs24.x');
-  assert.ok(fn.Properties.Environment.Variables.ORIGIN_SECRET_ARN);
+  assert.equal(
+    fn.Properties.Environment.Variables.ORIGIN_PARAMETER_NAME,
+    '/modo-playa/prod/ingress',
+  );
   assert.equal(fn.Properties.Architectures[0], 'x86_64');
   assert.ok(fn.Properties.Timeout <= 29);
   assert.equal(fn.Properties.Role, `arn:aws:iam::650387442642:role/modo-playa-candidate-${name}`);
@@ -215,7 +218,8 @@ for (const resource of resources) {
       ].includes(name),
       'Sensitive literal in environment.',
     );
-    if (name.endsWith('_SECRET_ARN')) assert.match(value, /:secret:modo-playa\/prod\//);
+    assert.ok(!name.endsWith('_SECRET_ARN'), 'Secrets Manager reference in environment.');
+    if (name.endsWith('_PARAMETER_NAME')) assert.match(value, /^\/modo-playa\/prod\/[a-z-]+$/);
   }
 }
 const allowed = new Set([
@@ -237,13 +241,18 @@ const allowed = new Set([
 for (const resource of resources)
   assert.ok(allowed.has(resource.Type), `Unexpected resource: ${resource.Type}`);
 assert.doesNotMatch(contents, /mongodb(?:\+srv)?:\/\/|AKIA[0-9A-Z]{16}|modo-playa\/test\//);
-// Only CloudFront's ingress header may contain a dynamic secret reference.
-const withoutIngress = structuredClone(template);
-for (const resource of Object.values(withoutIngress.Resources))
-  if (resource.Type === 'AWS::CloudFront::Distribution')
-    for (const origin of resource.Properties.DistributionConfig.Origins)
-      delete origin.OriginCustomHeaders;
-assert.doesNotMatch(JSON.stringify(withoutIngress), /resolve:secretsmanager/);
+// El token de origen llega solo como parámetro NoEcho; no hay referencias dinámicas.
+assert.deepEqual(template.Parameters?.OriginVerifyToken, {
+  Type: 'String',
+  Description: 'Token de origen x-modo-playa-origin desde /modo-playa/prod/ingress.',
+  MinLength: 32,
+  NoEcho: true,
+});
+const originHeaders = distribution.Origins.flatMap((origin) => origin.OriginCustomHeaders ?? []);
+assert.deepEqual(originHeaders, [
+  { HeaderName: 'x-modo-playa-origin', HeaderValue: { Ref: 'OriginVerifyToken' } },
+]);
+assert.doesNotMatch(contents, /resolve:|secretsmanager/);
 console.info(
   'Assembly revisada: Event + Web ZIPs, routing explícito, OAC, referencias prod e ingreso sin caché.',
 );

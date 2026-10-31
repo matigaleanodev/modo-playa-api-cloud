@@ -1,6 +1,7 @@
 import {
   CliCredentialsStackSynthesizer,
   CfnOutput,
+  CfnParameter,
   Fn,
   RemovalPolicy,
   Stack,
@@ -29,7 +30,13 @@ import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { routes, type RouteGroup } from '@modo-playa/contracts/routes';
 import { documentationPaths } from '@modo-playa/contracts/documentation';
-import { ACCOUNT, REGION, STACK_NAME, type DeploymentConfiguration } from './config.ts';
+import {
+  ACCOUNT,
+  PARAMETER_NAMES,
+  REGION,
+  STACK_NAME,
+  type DeploymentConfiguration,
+} from './config.ts';
 
 export const MEDIA_PATHS = [
   '/api/admin/lodgings',
@@ -101,17 +108,17 @@ export class ModoPlayaStack extends Stack {
       });
       const vars: Record<string, string> = {
         ...config.commonEnvironment,
-        ORIGIN_SECRET_ARN: config.originSecretArn,
+        ORIGIN_PARAMETER_NAME: PARAMETER_NAMES.ingress,
         ...(name === 'identity'
           ? {
-              IDENTITY_SECRET_ARN: config.appSecretArn,
-              EMAIL_SECRET_ARN: config.emailSecretArn,
+              APP_PARAMETER_NAME: PARAMETER_NAMES.app,
+              EMAIL_PARAMETER_NAME: PARAMETER_NAMES.email,
               RESEND_FROM_EMAIL: config.resendFromEmail,
               ...config.publicOptions,
             }
           : {}),
-        ...(name === 'catalog' ? { CATALOG_SECRET_ARN: config.databaseSecretArn } : {}),
-        ...(name === 'management' ? { MANAGEMENT_SECRET_ARN: config.appSecretArn } : {}),
+        ...(name === 'catalog' ? { DATABASE_PARAMETER_NAME: PARAMETER_NAMES.database } : {}),
+        ...(name === 'management' ? { APP_PARAMETER_NAME: PARAMETER_NAMES.app } : {}),
       };
       const fn = new CfnFunction(this, `${name}Function`, {
         functionName: `${STACK_NAME}-${name}`,
@@ -185,8 +192,8 @@ export class ModoPlayaStack extends Stack {
     const mediaEnvironment = {
       ...config.commonEnvironment,
       ...config.publicOptions,
-      MEDIA_SECRET_ARN: config.appSecretArn,
-      STORAGE_SECRET_ARN: config.storageSecretArn,
+      APP_PARAMETER_NAME: PARAMETER_NAMES.app,
+      STORAGE_PARAMETER_NAME: PARAMETER_NAMES.storage,
       MEDIA_REQUEST_TIMEOUT_MS: '90000',
     };
     const serviceConfig = {
@@ -267,6 +274,14 @@ export class ModoPlayaStack extends Stack {
         { eventType: 'viewer-request', functionArn: candidateGate.attrFunctionArn },
       ],
     });
+    // La entrega lo lee de /modo-playa/prod/ingress (SSM) al preparar el changeset; NoEcho lo
+    // mantiene fuera de template, artifacts y respuestas de CloudFormation.
+    const originToken = new CfnParameter(this, 'OriginVerifyToken', {
+      type: 'String',
+      noEcho: true,
+      minLength: 32,
+      description: 'Token de origen x-modo-playa-origin desde /modo-playa/prod/ingress.',
+    });
     const distribution = new CfnDistribution(this, 'Distribution', {
       distributionConfig: {
         enabled: config.distributionEnabled,
@@ -288,7 +303,7 @@ export class ModoPlayaStack extends Stack {
             originCustomHeaders: [
               {
                 headerName: 'x-modo-playa-origin',
-                headerValue: `{{resolve:secretsmanager:${config.originSecretArn}:SecretString:ORIGIN_VERIFY_TOKEN}}`,
+                headerValue: originToken.valueAsString,
               },
             ],
             customOriginConfig: {

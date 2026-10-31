@@ -10,6 +10,7 @@ import { backendForPath, MEDIA_PATHS } from '../packages/infrastructure/src/stac
 import { FoundationStack } from '../packages/infrastructure/src/foundation.ts';
 import {
   applicationPolicies,
+  parametersSyncPolicy,
   CEILING,
   githubTrust,
 } from '../packages/infrastructure/src/delivery-policies.ts';
@@ -158,9 +159,88 @@ it('protects Web origin with one OAC policy while preserving Bearer and media bu
       .Architectures,
   ).toEqual(['x86_64']);
   for (const resource of functions)
-    expect(resource.Properties.Environment.Variables.ORIGIN_SECRET_ARN).toContain(
-      'modo-playa/prod/ingress-',
+    expect(resource.Properties.Environment.Variables.ORIGIN_PARAMETER_NAME).toBe(
+      '/modo-playa/prod/ingress',
     );
+  expect(template.toJSON().Parameters.OriginVerifyToken).toMatchObject({
+    Type: 'String',
+    NoEcho: true,
+    MinLength: 32,
+  });
+  expect(JSON.stringify(template.toJSON())).not.toMatch(/resolve:|secretsmanager/);
+  const parameterVariables = (suffix: string) =>
+    Object.fromEntries(
+      Object.entries(
+        functions.find((resource) => resource.Properties.FunctionName.endsWith(suffix))!.Properties
+          .Environment.Variables as Record<string, string>,
+      ).filter(([name]) => name.endsWith('_PARAMETER_NAME') || name.endsWith('_SECRET_ARN')),
+    );
+  expect(parameterVariables('-health')).toEqual({
+    ORIGIN_PARAMETER_NAME: '/modo-playa/prod/ingress',
+  });
+  expect(parameterVariables('-catalog')).toEqual({
+    ORIGIN_PARAMETER_NAME: '/modo-playa/prod/ingress',
+    DATABASE_PARAMETER_NAME: '/modo-playa/prod/database',
+  });
+  expect(parameterVariables('-identity')).toEqual({
+    ORIGIN_PARAMETER_NAME: '/modo-playa/prod/ingress',
+    APP_PARAMETER_NAME: '/modo-playa/prod/app-properties',
+    EMAIL_PARAMETER_NAME: '/modo-playa/prod/email',
+  });
+  expect(parameterVariables('-management')).toEqual({
+    ORIGIN_PARAMETER_NAME: '/modo-playa/prod/ingress',
+    APP_PARAMETER_NAME: '/modo-playa/prod/app-properties',
+  });
+  const web = Object.values(template.findResources('AWS::Lambda::WebFunctionRevision'))[0]!;
+  const mediaVariables = JSON.stringify(web.Properties);
+  expect(mediaVariables).toContain('/modo-playa/prod/object-storage');
+  expect(mediaVariables).not.toMatch(/\/modo-playa\/prod\/(email|database|ingress)/);
+});
+it('recycles every function when the configuration generation changes', () => {
+  const revision = (stack: ReturnType<typeof fixture>['stack']) =>
+    Object.keys(Template.fromStack(stack).findResources('AWS::Lambda::WebFunctionRevision'))[0];
+  const base = fixture();
+  const bumped = fixture({ CONFIGURATION_GENERATION: '2' });
+  expect(revision(bumped.stack)).not.toBe(revision(base.stack));
+  for (const resource of Object.values(
+    Template.fromStack(bumped.stack).findResources('AWS::Lambda::Function'),
+  ))
+    expect(resource.Properties.Environment.Variables.CONFIGURATION_GENERATION).toBe('2');
+});
+it('scopes SSM parameters and the aws/ssm key per runtime group', () => {
+  const policies = applicationPolicies();
+  const arn = (name: string) =>
+    `arn:aws:ssm:us-east-1:650387442642:parameter/modo-playa/prod/${name}`;
+  const readable = (group: keyof typeof policies) =>
+    policies[group].flatMap((statement) =>
+      statement.Action.includes('ssm:GetParameter') ? statement.Resource : [],
+    );
+  const context = (group: keyof typeof policies, action: string) =>
+    policies[group].find((statement) => statement.Action.includes(action))?.Condition;
+  expect(readable('health')).toEqual([arn('ingress')]);
+  expect(readable('catalog')).toEqual([arn('database'), arn('ingress')]);
+  expect(readable('identity')).toEqual([arn('app-properties'), arn('email'), arn('ingress')]);
+  expect(readable('management')).toEqual([arn('app-properties'), arn('ingress')]);
+  expect(readable('prepare')).toEqual([arn('ingress')]);
+  expect(readable('cloudformation')).toEqual([]);
+  expect(readable('media')).toEqual([arn('app-properties'), arn('object-storage')]);
+  expect(context('catalog', 'kms:Decrypt')).toEqual({
+    StringEquals: {
+      'kms:ViaService': 'ssm.us-east-1.amazonaws.com',
+      'kms:EncryptionContext:PARAMETER_ARN': [arn('database'), arn('ingress')],
+    },
+  });
+  const sync = parametersSyncPolicy().Statement;
+  expect(sync.flatMap((statement) => statement.Action).sort()).toEqual([
+    'kms:Encrypt',
+    'kms:GenerateDataKey',
+    'ssm:PutParameter',
+  ]);
+  expect(sync[0]!.Resource).toEqual(
+    ['app-properties', 'database', 'email', 'object-storage', 'ingress'].map(arn),
+  );
+  for (const statements of Object.values(policies))
+    expect(statements.flatMap((statement) => statement.Action)).not.toContain('ssm:PutParameter');
 });
 it('binds immutable media revisions to stable code and configuration', () => {
   const a = fixture();
@@ -281,9 +361,12 @@ it('rejects test secret naming and uncontrolled candidate access', () => {
   expect(() =>
     deploymentConfiguration({
       ...env,
-      IDENTITY_SECRET_ARN: env.IDENTITY_SECRET_ARN.replace('/prod/', '/test/'),
+      DEPLOYMENT_BUCKET: env.DEPLOYMENT_BUCKET.replace('candidate', 'test'),
     }),
-  ).toThrow();
+  ).toThrow('DEPLOYMENT_BUCKET');
+  expect(() => deploymentConfiguration({ ...env, CONFIGURATION_GENERATION: '0' })).toThrow(
+    'CONFIGURATION_GENERATION',
+  );
   expect(() => deploymentConfiguration({ ...env, DISTRIBUTION_ENABLED: 'true' })).toThrow(
     'approved IPs',
   );

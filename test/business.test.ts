@@ -250,7 +250,11 @@ it('runtime real bloquea alta y borrado sin media antes de abrir Mongo; catálog
   await expect(runtime.services(true)).rejects.toBeInstanceOf(MediaDependencyUnavailable);
   const read = vi.fn(async () => JSON.stringify({ MONGO_URI: 'mongodb://127.0.0.1:1/never' }));
   expect(
-    await businessConfiguration('catalog', { CATALOG_SECRET_ARN: 'simulated-reference' }, read)(),
+    await businessConfiguration(
+      'catalog',
+      { DATABASE_PARAMETER_NAME: '/modo-playa/prod/database' },
+      read,
+    )(),
   ).toMatchObject({ mongoUri: 'mongodb://127.0.0.1:1/never' });
   expect(read).toHaveBeenCalledTimes(1);
 });

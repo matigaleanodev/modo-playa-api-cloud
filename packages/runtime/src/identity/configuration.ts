@@ -1,5 +1,10 @@
-import { readSecret, type SecretReader } from '../http/secret-reader.ts';
-export type { SecretReader } from '../http/secret-reader.ts';
+import {
+  applyParameter,
+  readParameter,
+  refreshing,
+  type ParameterReader,
+} from '../http/parameter-reader.ts';
+export type { ParameterReader } from '../http/parameter-reader.ts';
 export interface IdentityConfiguration {
   mongoUri: string;
   secretKey: string;
@@ -11,25 +16,15 @@ export interface IdentityConfiguration {
   r2Endpoint: string;
   r2Bucket: string;
 }
-export function runtimeConfiguration(env: NodeJS.ProcessEnv, read: SecretReader = readSecret) {
-  let pending: Promise<IdentityConfiguration> | undefined;
-  return () => {
-    pending ??= (async () => {
+export function runtimeConfiguration(
+  env: NodeJS.ProcessEnv,
+  read: ParameterReader = readParameter,
+) {
+  return refreshing<IdentityConfiguration>(
+    async () => {
       const values = { ...env };
-      for (const [reference, names] of [
-        [env.IDENTITY_SECRET_ARN, ['MONGO_URI', 'SECRET_KEY']],
-        [env.EMAIL_SECRET_ARN, ['RESEND_API_KEY']],
-      ] as const) {
-        if (!reference) continue;
-        const secret: unknown = JSON.parse(await read(reference, AbortSignal.timeout(2000)));
-        if (!secret || typeof secret !== 'object' || Array.isArray(secret))
-          throw new Error('Invalid configuration.');
-        for (const name of names) {
-          const value = (secret as Record<string, unknown>)[name];
-          if (typeof value !== 'string' || !value.trim()) throw new Error('Invalid configuration.');
-          values[name] = value;
-        }
-      }
+      await applyParameter(values, 'app', read);
+      await applyParameter(values, 'email', read);
       for (const name of ['MONGO_URI', 'SECRET_KEY', 'RESEND_API_KEY', 'RESEND_FROM_EMAIL'])
         if (!values[name]?.trim()) throw new Error('Missing configuration.');
       const bcryptRounds = Number(values.BCRYPT_ROUNDS ?? 12);
@@ -46,10 +41,7 @@ export function runtimeConfiguration(env: NodeJS.ProcessEnv, read: SecretReader 
         r2Endpoint: values.R2_ENDPOINT ?? '',
         r2Bucket: values.R2_BUCKET ?? '',
       };
-    })().catch(() => {
-      pending = undefined;
-      throw new Error('Runtime configuration unavailable.');
-    });
-    return pending;
-  };
+    },
+    () => new Error('Runtime configuration unavailable.'),
+  );
 }
