@@ -18,7 +18,7 @@ const allowed = {
     'mongoose',
     'resend',
     'validator',
-    '@aws-sdk/client-secrets-manager',
+    '@aws-sdk/client-ssm',
     '@aws-sdk/client-s3',
     'busboy',
     'sharp',

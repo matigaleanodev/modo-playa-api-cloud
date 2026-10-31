@@ -68,7 +68,7 @@ from review_changeset import validate, PREFIX, STACK, ROLE
 stack = PREFIX + 'stack/' + STACK + '/id'
 name = STACK + '-' + 'a' * 40 + '-1-1'
 changeset = PREFIX + 'changeSet/' + name + '/id'
-change = {'StackId': stack, 'ChangeSetId': changeset, 'StackName': STACK, 'ChangeSetName': name, 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Changes': [{'ResourceChange': {'ResourceType': 'AWS::Lambda::Function', 'Action': 'Modify', 'Replacement': 'False'}}]}
+change = {'StackId': stack, 'ChangeSetId': changeset, 'StackName': STACK, 'ChangeSetName': name, 'Status': 'CREATE_COMPLETE', 'ExecutionStatus': 'AVAILABLE', 'Parameters': [{'ParameterKey': 'OriginVerifyToken', 'ParameterValue': '****'}], 'Changes': [{'ResourceChange': {'ResourceType': 'AWS::Lambda::Function', 'Action': 'Modify', 'Replacement': 'False'}}]}
 state = {'StackId': stack, 'RoleARN': ROLE, 'StackStatus': 'UPDATE_ROLLBACK_COMPLETE'}
 template = {'Resources': {'Function': {'Type': 'AWS::Lambda::Function'}}}
 validate(change, state, template, stack, changeset)
@@ -86,6 +86,11 @@ rejected()
 change['Changes'][0]['ResourceChange']['Replacement'] = 'False'
 change['Changes'][0]['ResourceChange']['Action'] = 'Remove'
 rejected()
+change['Changes'][0]['ResourceChange']['Action'] = 'Modify'
+validate(change, state, template, stack, changeset)
+for parameters in ([], [{'ParameterKey': 'OriginVerifyToken', 'ParameterValue': 'visible-token'}], change['Parameters'] + [{'ParameterKey': 'Other', 'ParameterValue': 'x'}]):
+    change['Parameters'] = parameters
+    rejected()
 `;
     const result = python('-c', source);
     expect(result.status, result.stderr).toBe(0);
@@ -143,7 +148,7 @@ template['Resources'][new]=template['Resources'].pop(old)
 template['Resources'][new]['Properties']['BuildConfig']['CodeConfig']['S3Object']['Key']='new.zip'
 template['Resources']['MediaEndpoint']['Properties']['RevisionWeights'][0]['RevisionId']['Fn::GetAtt'][0]=new
 changes=[{'ResourceChange':{'LogicalResourceId':old,'ResourceType':'AWS::Lambda::WebFunctionRevision','Action':'Remove'}},{'ResourceChange':{'LogicalResourceId':new,'ResourceType':'AWS::Lambda::WebFunctionRevision','Action':'Add'}},{'ResourceChange':{'LogicalResourceId':'MediaEndpoint','ResourceType':'AWS::Lambda::WebFunctionEndpoint','Action':'Modify','Replacement':'False'}}]
-change={'StackId':stack,'ChangeSetId':changeset,'StackName':STACK,'ChangeSetName':name,'Status':'CREATE_COMPLETE','ExecutionStatus':'AVAILABLE','Changes':changes}
+change={'StackId':stack,'ChangeSetId':changeset,'StackName':STACK,'ChangeSetName':name,'Status':'CREATE_COMPLETE','ExecutionStatus':'AVAILABLE','Parameters':[{'ParameterKey':'OriginVerifyToken','ParameterValue':'****'}],'Changes':changes}
 state={'StackId':stack,'RoleARN':ROLE,'StackStatus':'UPDATE_COMPLETE'}
 validate(change,state,template,stack,changeset,prior)
 def rejected():

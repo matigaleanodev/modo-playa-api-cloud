@@ -29,21 +29,25 @@ Destinations retains parallel Open-Meteo and sunrise-sunset requests, timezone a
 
 CloudFront selects one origin per path: `/api/admin/lodgings`, `/api/admin/lodgings/*`, `/api/admin/lodging-image-uploads`, `/api/auth/me/profile-image` and `/api/admin/media/health` reach Web Functions; other operations use explicit HTTP API/Event routes. It preserves `/api`, Bearer, query, Content-Type/boundary and methods/body; HEAD and OPTIONS reach the selected backend. No cache or mutating failover. Events retain x86_64; media uses Node24 ARM64, concurrency 1 per environment, at most 2 environments, a 90 s application deadline, Web 100 s and CloudFront origin 110 s/completion 120 s. These declarations do not establish managed capacity.
 
-Web Functions uses `IamAuth`, `always-amz-auth` OAC and an endpoint policy scoped to the distribution. The JSON origin retains execute-api and requires `x-modo-playa-origin`, overwritten by CloudFront; every Event export rejects missing/invalid configuration before effects, including HEAD/OPTIONS/health. Cloudflare IP headers are not trusted. Health does not query Mongo; it may resolve its ingress reference when an instance starts.
+Web Functions uses `IamAuth`, `always-amz-auth` OAC and an endpoint policy scoped to the distribution. The JSON origin retains execute-api and requires `x-modo-playa-origin`, overwritten by CloudFront; every Event export rejects missing/invalid configuration before effects, including HEAD/OPTIONS/health. Cloudflare IP headers are not trusted. Health does not query Mongo; it resolves the ingress parameter when serving.
 
 Sensitive configuration resolved at runtime:
 
-| Reference                        | Sensitive JSON                                 | Readers                           |
-| -------------------------------- | ---------------------------------------------- | --------------------------------- |
-| `modo-playa/prod/app-properties` | `MONGO_URI`, `SECRET_KEY`                      | identity, management and media    |
-| `modo-playa/prod/database`       | `MONGO_URI`                                    | catalog                           |
-| `modo-playa/prod/email`          | `RESEND_API_KEY`                               | identity                          |
-| `modo-playa/prod/object-storage` | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`     | media                             |
-| `modo-playa/prod/ingress`        | `ORIGIN_VERIFY_TOKEN` (at least 32 characters) | Event and CloudFormation executor |
+| SSM parameter / secret                  | Sensitive JSON                                 | Readers                        |
+| --------------------------------------- | ---------------------------------------------- | ------------------------------ |
+| `/modo-playa/prod/app-properties` (SSM) | `MONGO_URI` (write), `SECRET_KEY`              | identity, management and media |
+| `/modo-playa/prod/database` (SSM)       | `MONGO_URI` (read-only)                        | catalog                        |
+| `/modo-playa/prod/email` (SSM)          | `RESEND_API_KEY`                               | identity                       |
+| `/modo-playa/prod/object-storage` (SSM) | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`     | media                          |
+| `/modo-playa/prod/ingress` (SSM)        | `ORIGIN_VERIFY_TOKEN` (at least 32 characters) | Event and CloudFront header    |
 
-`IDENTITY_SECRET_ARN`, `MANAGEMENT_SECRET_ARN` and `MEDIA_SECRET_ARN` share the main reference; `CATALOG_SECRET_ARN`, `EMAIL_SECRET_ARN`, `STORAGE_SECRET_ARN` and `ORIGIN_SECRET_ARN` select their respective domain. Separations prevent catalog from reading JWT, or email/object credentials from reaching groups that do not need them: `GetSecretValue` returns the entire JSON. Synth creates no secrets. Authenticated Mongo retains its current mechanism.
+The five parameters are standard `SecureString` values under the `aws/ssm` managed key; their names live in `packages/contracts/src/configuration.ts` and reach functions through `APP_PARAMETER_NAME`, `DATABASE_PARAMETER_NAME`, `EMAIL_PARAMETER_NAME`, `STORAGE_PARAMETER_NAME` and `ORIGIN_PARAMETER_NAME`. The runtime rejects names outside the contract without calling SSM. Each role reads only its parameters and decrypts only through SSM with an exact `kms:EncryptionContext:PARAMETER_ARN`: catalog gets neither JWT nor the write URI, identity gets no R2 and media gets no email. With `aws/ssm`, any principal in the account with `ssm:GetParameter` on a parameter can decrypt it.
 
-Public variables: `RESEND_FROM_EMAIL`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_REGION` (`auto`), `MEDIA_PUBLIC_BASE_URL`, `CORS_ORIGIN` (compatible `*`), `BCRYPT_ROUNDS` (12), `SUPERADMIN_OWNER_ID`, `IMAGE_ALLOWED_MIME`, `PENDING_UPLOAD_TTL_SECONDS` and `LODGING_IMAGE_MAX_BYTES/WIDTH/HEIGHT` / `USER_PROFILE_IMAGE_MAX_BYTES/WIDTH/HEIGHT`. Direct sensitive configuration injection remains available for explicit fixtures; CDK declares references only. Configuration errors are sanitized. Ingress rotation requires coordinating CloudFront and Event instance recycling because valid configuration is cached per instance.
+CloudFormation does not support `ssm-secure` on distributions: CloudFront receives the `x-modo-playa-origin` header from the `NoEcho` `OriginVerifyToken` parameter, which delivery reads from `/modo-playa/prod/ingress` when preparing the change set. The value stays out of the template, artifacts and CloudFormation responses, though it remains in the distribution configuration. The runtime does not use Secrets Manager. Synth creates no parameters.
+
+Validated configuration is cached for up to 5 minutes; a failed refresh returns 503 without reusing the expired value. Rotated JWT, Resend and R2 values apply without a deployment; a rotated ingress token also needs a delivery to update CloudFront. Mongo opens one connection per instance, so rotating `MONGO_URI` requires keeping the previous credential until instances recycle: incrementing the `CONFIGURATION_GENERATION` variable and delivering a revision changes Event Function configuration and creates a new Web revision.
+
+Public variables: `RESEND_FROM_EMAIL`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_REGION` (`auto`), `MEDIA_PUBLIC_BASE_URL`, `CORS_ORIGIN` (compatible `*`), `BCRYPT_ROUNDS` (12), `SUPERADMIN_OWNER_ID`, `IMAGE_ALLOWED_MIME`, `PENDING_UPLOAD_TTL_SECONDS` and `LODGING_IMAGE_MAX_BYTES/WIDTH/HEIGHT` / `USER_PROFILE_IMAGE_MAX_BYTES/WIDTH/HEIGHT`. Direct sensitive configuration injection remains available for explicit fixtures; CDK declares references only. Configuration errors are sanitized.
 
 Mongo reuses one connection per instance, a maximum pool of 4 and bounded operations, without autoCreate/autoIndex. It retains `users`, `contacts`, `lodgings`, ObjectId, timestamps, declared indexes and legacy fields. Dashboard reuses identity's User model.
 

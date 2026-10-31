@@ -1,4 +1,9 @@
-import { readSecret, type SecretReader } from '../http/secret-reader.ts';
+import {
+  applyParameter,
+  readParameter,
+  refreshing,
+  type ParameterReader,
+} from '../http/parameter-reader.ts';
 import { MediaDependencyUnavailable } from '../business/media.ts';
 import type { BusinessConfiguration } from '../business/configuration.ts';
 import type { MediaSettings } from './ports.ts';
@@ -11,25 +16,12 @@ export interface MediaConfiguration extends BusinessConfiguration {
   profileMaxBytes: number;
   requestTimeoutMs: number;
 }
-export function mediaConfiguration(env: NodeJS.ProcessEnv, read: SecretReader = readSecret) {
-  let pending: Promise<MediaConfiguration> | undefined;
-  return () => {
-    pending ??= (async () => {
+export function mediaConfiguration(env: NodeJS.ProcessEnv, read: ParameterReader = readParameter) {
+  return refreshing<MediaConfiguration>(
+    async () => {
       const values = { ...env };
-      for (const [reference, names] of [
-        [env.MEDIA_SECRET_ARN, ['MONGO_URI', 'SECRET_KEY']],
-        [env.STORAGE_SECRET_ARN, ['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']],
-      ] as const) {
-        if (!reference) continue;
-        const secret: unknown = JSON.parse(await read(reference, AbortSignal.timeout(2000)));
-        if (!secret || typeof secret !== 'object' || Array.isArray(secret))
-          throw new MediaDependencyUnavailable();
-        for (const name of names) {
-          const value = (secret as Record<string, unknown>)[name];
-          if (typeof value !== 'string' || !value.trim()) throw new MediaDependencyUnavailable();
-          values[name] = value;
-        }
-      }
+      await applyParameter(values, 'app', read);
+      await applyParameter(values, 'storage', read);
       if (!values.MONGO_URI?.trim() || !values.SECRET_KEY?.trim())
         throw new MediaDependencyUnavailable();
       const number = (name: string, fallback: number) => {
@@ -55,10 +47,7 @@ export function mediaConfiguration(env: NodeJS.ProcessEnv, read: SecretReader = 
         profileMaxBytes: number('USER_PROFILE_IMAGE_MAX_BYTES', 5 * 1024 * 1024),
         requestTimeoutMs: number('MEDIA_REQUEST_TIMEOUT_MS', 90000),
       };
-    })().catch(() => {
-      pending = undefined;
-      throw new MediaDependencyUnavailable();
-    });
-    return pending;
-  };
+    },
+    () => new MediaDependencyUnavailable(),
+  );
 }

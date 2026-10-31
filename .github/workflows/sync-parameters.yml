@@ -1,0 +1,128 @@
+# Publica las credenciales de runtime en SSM Parameter Store (SecureString estándar, clave aws/ssm).
+# Fuente única: GitHub Actions Secrets del environment `parameters`. Cada dominio se publica completo
+# con --overwrite y sin leer el valor anterior; los dominios no elegidos no se tocan.
+# JWT, Resend y R2 se toman en hasta 5 minutos; MONGO_URI requiere reciclar con CONFIGURATION_GENERATION;
+# ingress requiere además una entrega para actualizar el header de CloudFront.
+name: Sync runtime parameters
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: Dominio de credenciales a publicar
+        type: choice
+        options: [app-properties, database, email, object-storage, ingress, all]
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: modo-playa-parameters
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'matigaleanodev/modo-playa-api-cloud' && github.ref == 'refs/heads/dev' && vars.PARAMETERS_SYNC_ENABLED == 'true'
+    environment: parameters
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      DOMAIN: ${{ inputs.domain }}
+    steps:
+      - name: Build and validate payloads before authentication
+        env:
+          # Solo se cargan los secrets del dominio elegido.
+          APP_MONGO_URI: ${{ contains(fromJSON('["app-properties","all"]'), inputs.domain) && secrets.APP_MONGO_URI || '' }}
+          JWT_SECRET_KEY: ${{ contains(fromJSON('["app-properties","all"]'), inputs.domain) && secrets.JWT_SECRET_KEY || '' }}
+          CATALOG_MONGO_URI: ${{ contains(fromJSON('["database","all"]'), inputs.domain) && secrets.CATALOG_MONGO_URI || '' }}
+          RESEND_API_KEY: ${{ contains(fromJSON('["email","all"]'), inputs.domain) && secrets.RESEND_API_KEY || '' }}
+          R2_ACCESS_KEY_ID: ${{ contains(fromJSON('["object-storage","all"]'), inputs.domain) && secrets.R2_ACCESS_KEY_ID || '' }}
+          R2_SECRET_ACCESS_KEY: ${{ contains(fromJSON('["object-storage","all"]'), inputs.domain) && secrets.R2_SECRET_ACCESS_KEY || '' }}
+          ORIGIN_VERIFY_TOKEN: ${{ contains(fromJSON('["ingress","all"]'), inputs.domain) && secrets.ORIGIN_VERIFY_TOKEN || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          case "$DOMAIN" in
+            all) domains=(app-properties database email object-storage ingress) ;;
+            app-properties|database|email|object-storage|ingress) domains=("$DOMAIN") ;;
+            *) echo "Dominio inválido." >&2; exit 1 ;;
+          esac
+          workdir="$RUNNER_TEMP/parameters"
+          rm -rf "$workdir" && mkdir -m 700 "$workdir"
+          # Valores leídos del entorno; los argumentos solo llevan nombres. Nada se imprime.
+          python3 -I - "$workdir" "${domains[@]}" <<'PY'
+          import json, os, re, sys
+          workdir, domains = sys.argv[1], sys.argv[2:]
+          fields = {
+              'app-properties': {'MONGO_URI': 'APP_MONGO_URI', 'SECRET_KEY': 'JWT_SECRET_KEY'},
+              'database': {'MONGO_URI': 'CATALOG_MONGO_URI'},
+              'email': {'RESEND_API_KEY': 'RESEND_API_KEY'},
+              'object-storage': {'R2_ACCESS_KEY_ID': 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY': 'R2_SECRET_ACCESS_KEY'},
+              'ingress': {'ORIGIN_VERIFY_TOKEN': 'ORIGIN_VERIFY_TOKEN'},
+          }
+          def fail(message):
+              print(f'{message} Sin escrituras.', file=sys.stderr)
+              sys.exit(1)
+          payloads = {}
+          for domain in domains:
+              payload = {}
+              for key, source in fields[domain].items():
+                  value = os.environ.get(source, '')
+                  if not value:
+                      fail(f'Falta el secret {source} ({domain}).')
+                  if value != value.strip() or '\n' in value:
+                      fail(f'{source} tiene espacios o saltos de línea en los extremos.')
+                  if key == 'MONGO_URI' and not re.match(r'^mongodb(\+srv)?://[^\s]+$', value):
+                      fail(f'{source} no es una URI MongoDB.')
+                  if key == 'ORIGIN_VERIFY_TOKEN' and len(value) < 32:
+                      fail(f'{source} requiere al menos 32 caracteres.')
+                  payload[key] = value
+              payloads[domain] = json.dumps(payload, separators=(',', ':'), ensure_ascii=False)
+              if len(payloads[domain].encode()) > 4096:
+                  fail(f'El payload {domain} excede 4096 bytes.')
+          for domain, body in payloads.items():
+              with open(os.path.join(workdir, f'{domain}.json'), 'w', encoding='utf-8') as file:
+                  file.write(body)
+          PY
+          printf '%s\n' "${domains[@]}" > "$workdir/domains"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::650387442642:role/modo-playa-candidate-parameters
+          aws-region: us-east-1
+          allowed-account-ids: '650387442642'
+          role-session-name: modo-playa-parameters-${{ github.run_id }}
+
+      - name: Publish validated payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          workdir="$RUNNER_TEMP/parameters"
+          trap 'rm -rf "$workdir"' EXIT
+          [[ "$GITHUB_REF" == refs/heads/dev && "$AWS_REGION" == us-east-1 ]]
+          identity=$(aws sts get-caller-identity --region us-east-1 --output json)
+          [[ "$(jq -r .Account <<< "$identity")" == 650387442642 ]]
+          [[ "$(jq -r .Arn <<< "$identity")" == arn:aws:sts::650387442642:assumed-role/modo-playa-candidate-parameters/* ]]
+          mapfile -t domains < "$workdir/domains"
+          for domain in "${domains[@]}"; do
+            [[ "$domain" =~ ^(app-properties|database|email|object-storage|ingress)$ ]]
+            name="/modo-playa/prod/$domain"
+            if ! version=$(aws ssm put-parameter --region us-east-1 --name "$name" --type SecureString --tier Standard --overwrite --value "file://$workdir/$domain.json" --query Version --output text 2> "$workdir/error"); then
+              echo "Falló $name: $(grep -oE 'An error occurred \([A-Za-z]+\)' "$workdir/error" || echo 'error sin detalle')" >&2
+              exit 1
+            fi
+            result=updated
+            [[ "$version" == 1 ]] && result=created
+            echo "$name: versión $version ($result)" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          if printf '%s\n' "${domains[@]}" | grep -qx ingress; then
+            echo "Ingress cambió: el runtime lo toma en hasta 5 minutos y CloudFront en la próxima entrega; coordinar ambos." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          if printf '%s\n' "${domains[@]}" | grep -qE '^(app-properties|database)$'; then
+            echo "MONGO_URI cambió: incrementar CONFIGURATION_GENERATION y entregar una revisión para reciclar instancias." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
