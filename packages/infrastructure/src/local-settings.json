@@ -12,12 +12,5 @@
   "IDENTITY_ROLE_ARN": "arn:aws:iam::650387442642:role/modo-playa-candidate-identity",
   "CATALOG_ROLE_ARN": "arn:aws:iam::650387442642:role/modo-playa-candidate-catalog",
   "MANAGEMENT_ROLE_ARN": "arn:aws:iam::650387442642:role/modo-playa-candidate-management",
-  "MEDIA_ROLE_ARN": "arn:aws:iam::650387442642:role/modo-playa-candidate-media",
-  "IDENTITY_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123",
-  "MANAGEMENT_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123",
-  "MEDIA_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123",
-  "CATALOG_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/database-ABC123",
-  "EMAIL_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/email-ABC123",
-  "STORAGE_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/object-storage-ABC123",
-  "ORIGIN_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/ingress-ABC123"
+  "MEDIA_ROLE_ARN": "arn:aws:iam::650387442642:role/modo-playa-candidate-media"
 }

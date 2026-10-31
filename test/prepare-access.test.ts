@@ -13,16 +13,40 @@ const wildcard = (pattern: string, value: string) => {
     .replaceAll('?', '.');
   return new RegExp(`^${escaped}$`).test(value);
 };
+// Una condición del ceiling contenida en la del rol deja al rol igual o más acotado.
+const narrower = (role?: object, bound?: object): boolean =>
+  JSON.stringify(role) === JSON.stringify(bound) ||
+  (!!role &&
+    !!bound &&
+    Object.entries(bound).every(([operator, keys]) =>
+      Object.entries(keys as object).every(
+        ([key, value]) =>
+          JSON.stringify((role as Record<string, Record<string, unknown>>)[operator]?.[key]) ===
+          JSON.stringify(value),
+      ),
+    ));
 it('prepares size-bounded external roles and ceilings without granting self-administration', () => {
   for (const input of scenarios) {
     const access = deliveryAccess(input);
-    for (const ceiling of [access.ceiling, access.foundationCeiling])
+    for (const ceiling of [access.ceiling, access.foundationCeiling, access.parametersCeiling])
       expect(Buffer.byteLength(JSON.stringify(ceiling.document))).toBeLessThanOrEqual(6144);
     expect(CEILING).toBe(`arn:aws:iam::650387442642:policy/${access.ceiling.name}`);
     expect(access.roles.map((role: { name: string }) => role.name)).toEqual([
       'modo-playa-candidate-foundation-cloudformation',
       'modo-playa-candidate-foundation',
+      'modo-playa-candidate-parameters',
     ]);
+    const sync = access.roles[2]!;
+    expect(sync.boundary).toBe(
+      'arn:aws:iam::650387442642:policy/modo-playa-candidate-parameters-ceiling',
+    );
+    expect(sync.trust.Statement[0]).toHaveProperty(
+      ['Condition', 'StringEquals', 'token.actions.githubusercontent.com:sub'],
+      'repo:matigaleanodev@99203645/modo-playa-api-cloud@1434510701:environment:parameters',
+    );
+    expect(JSON.stringify(sync.permissions)).not.toMatch(
+      /GetParameter|Decrypt|secretsmanager|iam:/,
+    );
     const executor = access.roles[0]!;
     expect(executor.boundary).toBe(
       'arn:aws:iam::650387442642:policy/modo-playa-candidate-foundation-ceiling',
@@ -63,7 +87,7 @@ it('keeps every effective application permission inside the external ceiling', (
           expect(
             ceiling.some(
               (bound: { Action: string[]; Resource: string[]; Condition?: object }) =>
-                JSON.stringify(bound.Condition) === JSON.stringify(statement.Condition) &&
+                narrower(statement.Condition, bound.Condition) &&
                 bound.Action.some((pattern) => wildcard(pattern, action)) &&
                 bound.Resource.some((pattern) => wildcard(pattern, resource)),
             ),

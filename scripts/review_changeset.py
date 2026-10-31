@@ -118,6 +118,9 @@ def validate(change, stack_data, template, stack, changeset, prior=None):
         raise ValueError('Ejecutor CloudFormation inesperado')
     if stack_data.get('StackStatus') not in ('REVIEW_IN_PROGRESS', 'CREATE_COMPLETE', 'UPDATE_COMPLETE', 'UPDATE_ROLLBACK_COMPLETE'):
         raise ValueError('Recuperación requiere revisar el estado real antes de continuar')
+    # El único parámetro es el token NoEcho; CloudFormation solo devuelve su máscara.
+    if change.get('Parameters') != [{'ParameterKey': 'OriginVerifyToken', 'ParameterValue': '****'}]:
+        raise ValueError('Parámetros inesperados')
     changes = change.get('Changes', [])
     if not changes:
         raise ValueError('Changeset vacío')

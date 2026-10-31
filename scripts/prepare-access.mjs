@@ -7,12 +7,15 @@ import {
   CEILING,
   foundationPolicy,
   githubTrust,
+  parametersSyncPolicy,
   policy,
   PREFIX,
   roleArn,
   serviceTrust,
   STACK,
 } from '../packages/infrastructure/src/delivery-policies.ts';
+
+const SSM_PREFIX = 'arn:aws:ssm:us-east-1:650387442642:parameter/modo-playa/prod/';
 
 /** Foodly's review-only access material, compacted by identical action/condition sets. */
 export function deliveryAccess({
@@ -36,6 +39,10 @@ export function deliveryAccess({
   ).flat()) {
     const statement = {
       ...original,
+      // El ceiling limita KMS a SSM; cada rol conserva el contexto con sus ARN exactos.
+      ...(original.Action.some((action) => action.startsWith('kms:'))
+        ? { Condition: { StringEquals: { 'kms:ViaService': 'ssm.us-east-1.amazonaws.com' } } }
+        : {}),
       Resource: original.Resource.map((resource) =>
         resource
           .replace(
@@ -68,6 +75,13 @@ export function deliveryAccess({
           if (/^cloudformation:Describe/.test(action)) return 'cloudformation:Describe*';
           if (/^cloudformation:GetTemplate/.test(action)) return 'cloudformation:GetTemplate*';
           if (/^logs:Describe/.test(action)) return 'logs:Describe*';
+          // Las acciones de tags y entregas de logs solo aplican a recursos ya acotados.
+          if (/^(cloudfront|lambda|logs):(Tag|ListTags)/.test(action))
+            return `${action.split(':')[0]}:*Tag*`;
+          if (/^logs:(Create|Get|Update|Delete)LogDelivery$/.test(action))
+            return 'logs:*LogDelivery';
+          if (/^logs:(Put|Delete)RetentionPolicy$/.test(action)) return 'logs:*RetentionPolicy';
+          if (/^logs:(Create|Delete)LogGroup$/.test(action)) return 'logs:*LogGroup';
           return action;
         }),
       ),
@@ -84,6 +98,7 @@ export function deliveryAccess({
               )
             )
               return 'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/*';
+            if (resource.startsWith(SSM_PREFIX)) return `${SSM_PREFIX}*`;
             if (resource.startsWith('arn:aws:logs:us-east-1:650387442642:log-group:/aws/'))
               return `arn:aws:logs:us-east-1:650387442642:log-group:/aws/*/${STACK}*`;
             return resource;
@@ -118,14 +133,35 @@ export function deliveryAccess({
       StringEquals: { 'iam:PassedToService': 'cloudformation.amazonaws.com' },
     }),
   ]);
-  const ceiling = { name: `${PREFIX}ceiling`, document: policy([...compact.values()]) };
+  // Lecturas de configuración en un solo statement: cada acción solo aplica a su propio servicio.
+  const reads = [...compact.values()].filter(
+    (statement) =>
+      !statement.Condition &&
+      statement.Action.every((action) =>
+        ['secretsmanager:GetSecretValue', 'ssm:GetParameter'].includes(action),
+      ),
+  );
+  const bounded = [...compact.values()].filter((statement) => !reads.includes(statement));
+  if (reads.length)
+    bounded.splice(1, 0, {
+      Effect: 'Allow',
+      Action: reads.flatMap((statement) => statement.Action),
+      Resource: reads.flatMap((statement) => statement.Resource),
+    });
+  const ceiling = { name: `${PREFIX}ceiling`, document: policy(bounded) };
   const foundationCeiling = {
     name: `${PREFIX}foundation-ceiling`,
     document: policy([...foundationPermissions.Statement, ...foundationDelivery.Statement]),
   };
+  const parametersPermissions = parametersSyncPolicy();
+  const parametersCeiling = {
+    name: `${PREFIX}parameters-ceiling`,
+    document: parametersPermissions,
+  };
   const access = {
     ceiling,
     foundationCeiling,
+    parametersCeiling,
     roles: [
       {
         name: `${PREFIX}foundation-cloudformation`,
@@ -139,10 +175,16 @@ export function deliveryAccess({
         boundary: `arn:aws:iam::650387442642:policy/${foundationCeiling.name}`,
         permissions: foundationDelivery,
       },
+      {
+        name: `${PREFIX}parameters`,
+        trust: githubTrust('parameters'),
+        boundary: `arn:aws:iam::650387442642:policy/${parametersCeiling.name}`,
+        permissions: parametersPermissions,
+      },
     ],
   };
   if (!CEILING.endsWith(ceiling.name)) throw new Error('Invalid ceiling.');
-  for (const item of [ceiling, foundationCeiling])
+  for (const item of [ceiling, foundationCeiling, parametersCeiling])
     if (Buffer.byteLength(JSON.stringify(item.document)) > 6144)
       throw new Error(
         `${item.name} exceeds IAM policy size: ${Buffer.byteLength(JSON.stringify(item.document))}`,

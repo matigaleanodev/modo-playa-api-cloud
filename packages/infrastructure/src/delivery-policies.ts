@@ -1,4 +1,5 @@
-import { STACK_NAME, SECRET_NAMES } from './config.ts';
+import type { ParameterDomain } from '@modo-playa/contracts/configuration';
+import { PARAMETER_NAMES, parameterArn, STACK_NAME, SECRET_NAMES } from './config.ts';
 
 /** Adapted from Foodly; the externally installed ceiling is never editable by these stacks. */
 export const BUCKET = 'modo-playa-candidate-assets-650387442642-us-east-1';
@@ -50,6 +51,33 @@ const secretResources = (names: string[]) =>
   names.map((name) => `arn:aws:secretsmanager:us-east-1:650387442642:secret:${name}-??????`);
 const secrets = (names: string[]) =>
   allow(['secretsmanager:GetSecretValue'], secretResources(names));
+/**
+ * Secretos anteriores, legibles solo para recuperar la revisión previa. Se quitan, junto con
+ * los secretos, después de validar la entrega con Parameter Store.
+ */
+const RETAINED_SECRETS = {
+  health: [SECRET_NAMES.ingress],
+  identity: [SECRET_NAMES.app, SECRET_NAMES.email, SECRET_NAMES.ingress],
+  catalog: [SECRET_NAMES.database, SECRET_NAMES.ingress],
+  management: [SECRET_NAMES.app, SECRET_NAMES.ingress],
+  media: [SECRET_NAMES.app, SECRET_NAMES.storage],
+  cloudformation: [SECRET_NAMES.ingress],
+};
+/** Clave administrada aws/ssm sin KeyId fijo: el contexto acota cada rol a sus parámetros. */
+const ssmKms = (Action: string[], domains: ParameterDomain[]) => {
+  const arns = domains.map(parameterArn);
+  return allow(Action, ['arn:aws:kms:us-east-1:650387442642:key/*'], {
+    StringEquals: {
+      'kms:ViaService': 'ssm.us-east-1.amazonaws.com',
+      'kms:EncryptionContext:PARAMETER_ARN': arns,
+    },
+  });
+};
+const parameters = (domains: ParameterDomain[]) => [
+  allow(['ssm:GetParameter'], domains.map(parameterArn)),
+  ssmKms(['kms:Decrypt'], domains),
+];
+export const PARAMETER_DOMAINS = Object.keys(PARAMETER_NAMES) as ParameterDomain[];
 const logs = (names: string[]) =>
   allow(
     ['logs:CreateLogStream', 'logs:PutLogEvents'],
@@ -78,17 +106,28 @@ export function applicationPolicies(
           `arn:aws:apigateway:us-east-1::/tags/arn%3Aaws%3Aapigateway%3Aus-east-1%3A%3A%2Fapis%2F${apiId}%2F*`,
         ];
   return {
-    health: [logs(['health']), secrets([SECRET_NAMES.ingress])],
+    health: [logs(['health']), secrets(RETAINED_SECRETS.health), ...parameters(['ingress'])],
     identity: [
       logs(['identity']),
-      secrets([SECRET_NAMES.app, SECRET_NAMES.email, SECRET_NAMES.ingress]),
+      secrets(RETAINED_SECRETS.identity),
+      ...parameters(['app', 'email', 'ingress']),
     ],
-    catalog: [logs(['catalog']), secrets([SECRET_NAMES.database, SECRET_NAMES.ingress])],
-    management: [logs(['management']), secrets([SECRET_NAMES.app, SECRET_NAMES.ingress])],
-    media: [logs(['media']), secrets([SECRET_NAMES.app, SECRET_NAMES.storage])],
+    catalog: [
+      logs(['catalog']),
+      secrets(RETAINED_SECRETS.catalog),
+      ...parameters(['database', 'ingress']),
+    ],
+    management: [
+      logs(['management']),
+      secrets(RETAINED_SECRETS.management),
+      ...parameters(['app', 'ingress']),
+    ],
+    media: [logs(['media']), secrets(RETAINED_SECRETS.media), ...parameters(['app', 'storage'])],
     prepare: [
       readStack,
       readAssets,
+      // Lee el token de origen para el parámetro NoEcho de CloudFront.
+      ...parameters(['ingress']),
       allow(
         ['s3:ListBucket', 's3:GetBucketLocation', 's3:GetEncryptionConfiguration'],
         [`arn:aws:s3:::${BUCKET}`],
@@ -174,8 +213,8 @@ export function applicationPolicies(
         StringEquals: { 'iam:PassedToService': 'lambda.amazonaws.com' },
       }),
       allow(['s3:GetObject', 's3:GetObjectVersion'], [assetArn]),
-      // Only this origin token is resolved by CloudFormation, never business credentials.
-      secrets([SECRET_NAMES.ingress]),
+      // Solo para recuperar una plantilla anterior que resolvía el ingreso desde Secrets Manager.
+      secrets(RETAINED_SECRETS.cloudformation),
       allow(
         [
           'logs:CreateLogGroup',
@@ -292,6 +331,14 @@ export function applicationPolicies(
       ),
     ],
   };
+}
+
+/** Rol OIDC externo de sincronización: escribe sin leer ni descifrar, solo estos parámetros. */
+export function parametersSyncPolicy() {
+  return policy([
+    allow(['ssm:PutParameter'], PARAMETER_DOMAINS.map(parameterArn)),
+    ssmKms(['kms:Encrypt', 'kms:GenerateDataKey'], PARAMETER_DOMAINS),
+  ]);
 }
 
 export function foundationPolicy() {

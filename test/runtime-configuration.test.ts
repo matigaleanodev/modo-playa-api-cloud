@@ -3,10 +3,8 @@ import { mediaConfiguration } from '../packages/runtime/src/media/configuration.
 import { businessConfiguration } from '../packages/runtime/src/business/configuration.ts';
 import { MediaDependencyUnavailable } from '../packages/runtime/src/business/media.ts';
 
-const principal =
-  'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123';
-const storage =
-  'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/object-storage-DEF456';
+const principal = '/modo-playa/prod/app-properties';
+const storage = '/modo-playa/prod/object-storage';
 
 it('media combina dos dominios sensibles y conserva R2/limits públicos exclusivamente del entorno', async () => {
   const read = vi.fn(async (reference: string) =>
@@ -22,8 +20,8 @@ it('media combina dos dominios sensibles y conserva R2/limits públicos exclusiv
   );
   const configuration = mediaConfiguration(
     {
-      MEDIA_SECRET_ARN: principal,
-      STORAGE_SECRET_ARN: storage,
+      APP_PARAMETER_NAME: principal,
+      STORAGE_PARAMETER_NAME: storage,
       R2_ENDPOINT: 'https://storage.example.test',
       R2_BUCKET: 'simulated-bucket',
       R2_REGION: 'auto',
@@ -50,7 +48,7 @@ it('media combina dos dominios sensibles y conserva R2/limits públicos exclusiv
     },
   });
   expect(read.mock.calls.map(([reference]) => reference)).toEqual([principal, storage]);
-  const invalid = mediaConfiguration({ MEDIA_SECRET_ARN: principal }, async () => {
+  const invalid = mediaConfiguration({ APP_PARAMETER_NAME: principal }, async () => {
     throw new Error('sensitive-provider-error');
   });
   await expect(invalid()).rejects.toBeInstanceOf(MediaDependencyUnavailable);
@@ -58,8 +56,7 @@ it('media combina dos dominios sensibles y conserva R2/limits públicos exclusiv
 });
 
 it('catálogo lee sólo Mongo; management comparte principal sin exigir correo ni R2', async () => {
-  const database =
-    'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/database-ABC123';
+  const database = '/modo-playa/prod/database';
   const read = vi.fn(async (reference: string) =>
     JSON.stringify(
       reference === database
@@ -68,10 +65,10 @@ it('catálogo lee sólo Mongo; management comparte principal sin exigir correo n
     ),
   );
   expect(
-    await businessConfiguration('catalog', { CATALOG_SECRET_ARN: database }, read)(),
+    await businessConfiguration('catalog', { DATABASE_PARAMETER_NAME: database }, read)(),
   ).toMatchObject({ secretKey: undefined });
   expect(
-    await businessConfiguration('management', { MANAGEMENT_SECRET_ARN: principal }, read)(),
+    await businessConfiguration('management', { APP_PARAMETER_NAME: principal }, read)(),
   ).toMatchObject({ secretKey: 'simulated-jwt-key' });
   expect(read.mock.calls.map(([reference]) => reference)).toEqual([database, principal]);
 });

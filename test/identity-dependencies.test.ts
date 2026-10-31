@@ -8,10 +8,8 @@ import { CloudflareMediaUrlBuilderService } from '../packages/runtime/src/identi
 
 describe('dependencias reales sustituibles', () => {
   it('carga JSON sensible + entorno público por referencias prod, recupera fallos y comparte lectura', async () => {
-    const principal =
-      'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/app-properties-ABC123';
-    const email =
-      'arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/email-DEF456';
+    const principal = '/modo-playa/prod/app-properties';
+    const email = '/modo-playa/prod/email';
     const read = vi
       .fn(async (reference: string) =>
         JSON.stringify(
@@ -23,8 +21,8 @@ describe('dependencias reales sustituibles', () => {
       .mockRejectedValueOnce(new Error('simulated sensitive failure'));
     const configuration = runtimeConfiguration(
       {
-        IDENTITY_SECRET_ARN: principal,
-        EMAIL_SECRET_ARN: email,
+        APP_PARAMETER_NAME: principal,
+        EMAIL_PARAMETER_NAME: email,
         RESEND_FROM_EMAIL: 'test@example.test',
       },
       read,

@@ -1,9 +1,11 @@
 import { isIP } from 'node:net';
+import { PARAMETER_NAMES, type ParameterDomain } from '@modo-playa/contracts/configuration';
 export const ACCOUNT = '650387442642';
 export const REGION = 'us-east-1';
 export const STACK_NAME = 'modo-playa-api-cloud-candidate';
 export const FOUNDATION_STACK_NAME = `${STACK_NAME}-foundation`;
 
+/** Secretos anteriores: solo legibles para recuperar la revisión previa hasta retirarlos. */
 export const SECRET_NAMES = {
   app: 'modo-playa/prod/app-properties',
   database: 'modo-playa/prod/database',
@@ -11,6 +13,10 @@ export const SECRET_NAMES = {
   storage: 'modo-playa/prod/object-storage',
   ingress: 'modo-playa/prod/ingress',
 } as const;
+
+export { PARAMETER_NAMES };
+export const parameterArn = (domain: ParameterDomain) =>
+  `arn:aws:ssm:${REGION}:${ACCOUNT}:parameter${PARAMETER_NAMES[domain]}`;
 
 /** Public configuration and resource references only; no runtime clients or secret lookups. */
 export function deploymentConfiguration(env: NodeJS.ProcessEnv) {
@@ -28,13 +34,6 @@ export function deploymentConfiguration(env: NodeJS.ProcessEnv) {
       name,
       new RegExp(
         `^arn:aws:iam::650387442642:role/modo-playa-candidate-${name.replace('_ROLE_ARN', '').toLowerCase()}$`,
-      ),
-    );
-  const secret = (name: string, suffix: string) =>
-    required(
-      name,
-      new RegExp(
-        `^arn:aws:secretsmanager:us-east-1:650387442642:secret:modo-playa/prod/${suffix}-[A-Za-z0-9]{6}$`,
       ),
     );
   const origins = required('CORS_ORIGIN', /\S+/)
@@ -59,10 +58,6 @@ export function deploymentConfiguration(env: NodeJS.ProcessEnv) {
         /^arn:aws:acm:us-east-1:650387442642:certificate\/[a-f0-9-]+$/,
       )
     : undefined;
-  const appSecretArn = secret('IDENTITY_SECRET_ARN', 'app-properties');
-  for (const name of ['MANAGEMENT_SECRET_ARN', 'MEDIA_SECRET_ARN'])
-    if (secret(name, 'app-properties') !== appSecretArn)
-      throw new Error('Identity, management and media share the app-properties reference.');
   const commonEnvironment = {
     NODE_ENV: 'production',
     CORS_ORIGIN: origins.join(','),
@@ -70,6 +65,10 @@ export function deploymentConfiguration(env: NodeJS.ProcessEnv) {
     R2_ENDPOINT: required('R2_ENDPOINT', /^https:\/\/[^\s/]+\/?$/),
     R2_BUCKET: required('R2_BUCKET', /^[a-z0-9][a-z0-9-]+$/),
     R2_REGION: env.R2_REGION || 'auto',
+    // Incrementarlo recicla Event y Web Functions en una entrega revisada (p. ej. tras rotar Mongo).
+    ...(env.CONFIGURATION_GENERATION
+      ? { CONFIGURATION_GENERATION: required('CONFIGURATION_GENERATION', /^[1-9]\d{0,9}$/) }
+      : {}),
   };
   const publicOptions: Record<string, string> = {};
   for (const name of [
@@ -91,11 +90,6 @@ export function deploymentConfiguration(env: NodeJS.ProcessEnv) {
     publicDomain,
     certificateArn,
     candidateIps,
-    appSecretArn,
-    databaseSecretArn: secret('CATALOG_SECRET_ARN', 'database'),
-    emailSecretArn: secret('EMAIL_SECRET_ARN', 'email'),
-    storageSecretArn: secret('STORAGE_SECRET_ARN', 'object-storage'),
-    originSecretArn: secret('ORIGIN_SECRET_ARN', 'ingress'),
     roles: Object.fromEntries(
       ['health', 'identity', 'catalog', 'management', 'media'].map((group) => [
         group,
