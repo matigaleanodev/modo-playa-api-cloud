@@ -122,6 +122,21 @@ for key, value in [('MONGO_SECRET_ARN', 'another-secret'), ('CORS_ORIGIN', 'http
     assert not stable_permission(resource, [function_change], template, prior)
     if old is None: del variables[key]
     else: variables[key] = old
+# Referencias de configuración: retiro de Secrets Manager, parámetros del proyecto y reciclado.
+prior['Resources']['healthFunction']['Properties']['Environment']['Variables']['ORIGIN_SECRET_ARN'] = 'old-secret'
+variables = function['Properties']['Environment']['Variables']
+variables['ORIGIN_PARAMETER_NAME'] = '/modo-playa/prod/ingress'
+variables['CONFIGURATION_GENERATION'] = '2'
+assert stable_permission(resource, [function_change], template, prior)
+for key, value in [('ORIGIN_PARAMETER_NAME', '/other/prod/ingress'), ('CONFIGURATION_GENERATION', '0'), ('ORIGIN_SECRET_ARN', 'new-secret')]:
+    old = variables.get(key)
+    variables[key] = value
+    assert not stable_permission(resource, [function_change], template, prior), key
+    if old is None: del variables[key]
+    else: variables[key] = old
+function['Properties']['Environment']['Other'] = 'x'
+assert not stable_permission(resource, [function_change], template, prior)
+del function['Properties']['Environment']['Other']
 
 for target, field, value in [(resource, 'Replacement', 'True'), (resource, 'Action', 'Remove'), (resource['Details'][0], 'CausingEntity', 'other.Arn'), (function_change['ResourceChange'], 'Replacement', 'Conditional'), (function['Properties'], 'FunctionName', STACK + '-other'), (function['Properties'], 'Role', 'another-role'), (permission['Properties'], 'SourceArn', 'another-api')]:
     old = target[field]
